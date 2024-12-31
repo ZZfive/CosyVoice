@@ -5,10 +5,11 @@
 stage=-1
 stop_stage=3
 
-data_url=www.openslr.org/resources/60
-data_dir=/mnt/lyuxiang.lx/data/tts/openslr/libritts
-pretrained_model_dir=../../../pretrained_models/CosyVoice-300M
+data_url=www.openslr.org/resources/60  # libritts数据集下载地址
+data_dir=/mnt/lyuxiang.lx/data/tts/openslr/libritts  # libritts数据集下载后解压存放路径
+pretrained_model_dir=../../../pretrained_models/CosyVoice-300M  # 预训练模型存放路径
 
+# 下载数据集
 if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
   echo "Data Download"
   for part in dev-clean test-clean dev-other test-other train-clean-100 train-clean-360 train-other-500; do
@@ -16,6 +17,7 @@ if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
   done
 fi
 
+# 数据预处理, 生成wav.scp/text/utt2spk/spk2utt
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
   echo "Data preparation, prepare wav.scp/text/utt2spk/spk2utt"
   for x in train-clean-100 train-clean-360 train-other-500 dev-clean dev-other test-clean test-other; do
@@ -24,6 +26,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
   done
 fi
 
+# 使用campplus模型提取说话人embedding，生成spk2embedding.pt和utt2embedding.pt
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
   echo "Extract campplus speaker embedding, you will get spk2embedding.pt and utt2embedding.pt in data/$x dir"
   for x in train-clean-100 train-clean-360 train-other-500 dev-clean dev-other test-clean test-other; do
@@ -32,6 +35,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
   done
 fi
 
+# 使用whisper模型提取语音token，生成utt2speech_token.pt
 if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
   echo "Extract discrete speech token, you will get utt2speech_token.pt in data/$x dir"
   for x in train-clean-100 train-clean-360 train-other-500 dev-clean dev-other test-clean test-other; do
@@ -40,6 +44,7 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
   done
 fi
 
+# 将数据转换为parquet格式，生成data.list和utt2data.list
 if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
   echo "Prepare required parquet format data, you should have prepared wav.scp/text/utt2spk/spk2utt/utt2embedding.pt/spk2embedding.pt/utt2speech_token.pt"
   for x in train-clean-100 train-clean-360 train-other-500 dev-clean dev-other test-clean test-other; do
@@ -105,7 +110,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
   done
 fi
 
-# average model
+# average model；对训练好的模型进行平均，取最好的 5 个检查点
 average_num=5
 if [ ${stage} -le 6 ] && [ ${stop_stage} -ge 6 ]; then
   for model in llm flow hifigan; do
