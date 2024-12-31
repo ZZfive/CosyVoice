@@ -52,7 +52,7 @@ class ConditionalCFM(BASECFM):
                 shape: (batch_size, n_feats, mel_timesteps)
         """
 
-        z = torch.randn_like(mu) * temperature
+        z = torch.randn_like(mu) * temperature  # 生成初始噪声，shape: [batch_size, n_feats, mel_timesteps]，如[1, 80, 942]
         cache_size = flow_cache.shape[2]
         # fix prompt and overlap part mu and z
         if cache_size != 0:
@@ -63,7 +63,7 @@ class ConditionalCFM(BASECFM):
         flow_cache = torch.stack([z_cache, mu_cache], dim=-1)
 
         t_span = torch.linspace(0, 1, n_timesteps + 1, device=mu.device, dtype=mu.dtype)
-        if self.t_scheduler == 'cosine':
+        if self.t_scheduler == 'cosine':  # 使用余弦调度器
             t_span = 1 - torch.cos(t_span * 0.5 * torch.pi)
         return self.solve_euler(z, t_span=t_span, mu=mu, mask=mask, spks=spks, cond=cond), flow_cache
 
@@ -119,7 +119,7 @@ class ConditionalCFM(BASECFM):
             if self.inference_cfg_rate > 0:
                 dphi_dt, cfg_dphi_dt = torch.split(dphi_dt, [x.size(0), x.size(0)], dim=0)
                 dphi_dt = ((1.0 + self.inference_cfg_rate) * dphi_dt - self.inference_cfg_rate * cfg_dphi_dt)
-            x = x + dt * dphi_dt
+            x = x + dt * dphi_dt  # x_t
             t = t + dt
             sol.append(x)
             if step < len(t_span) - 1:
@@ -130,7 +130,7 @@ class ConditionalCFM(BASECFM):
     def forward_estimator(self, x, mask, mu, t, spks, cond):
         if isinstance(self.estimator, torch.nn.Module):
             return self.estimator.forward(x, mask, mu, t, spks, cond)
-        elif isinstance(self.estimator, onnxruntime.InferenceSession):
+        elif isinstance(self.estimator, onnxruntime.InferenceSession):   # 兼容使用onnxruntime加速推理
             ort_inputs = {
                 'x': x.cpu().numpy(),
                 'mask': mask.cpu().numpy(),
@@ -141,7 +141,7 @@ class ConditionalCFM(BASECFM):
             }
             output = self.estimator.run(None, ort_inputs)[0]
             return torch.tensor(output, dtype=x.dtype, device=x.device)
-        else:
+        else:  # 兼容使用trt加速推理
             self.estimator.set_input_shape('x', (2, 80, x.size(2)))
             self.estimator.set_input_shape('mask', (2, 1, x.size(2)))
             self.estimator.set_input_shape('mu', (2, 80, x.size(2)))

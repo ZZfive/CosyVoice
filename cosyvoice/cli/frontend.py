@@ -71,14 +71,15 @@ class CosyVoiceFrontEnd:
             self.inflect_parser = inflect.engine()
 
     def _extract_text_token(self, text):
-        text_token = self.tokenizer.encode(text, allowed_special=self.allowed_special)
+        text_token = self.tokenizer.encode(text, allowed_special=self.allowed_special)  # 分词，文本转为token ids序列
         text_token = torch.tensor([text_token], dtype=torch.int32).to(self.device)
         text_token_len = torch.tensor([text_token.shape[1]], dtype=torch.int32).to(self.device)
         return text_token, text_token_len
 
     def _extract_speech_token(self, speech):
-        assert speech.shape[1] / 16000 <= 30, 'do not support extract speech token for audio longer than 30s'
-        feat = whisper.log_mel_spectrogram(speech, n_mels=128)
+        assert speech.shape[1] / 16000 <= 30, 'do not support extract speech token for audio longer than 30s'  # 限制音频长度不超过30s
+        feat = whisper.log_mel_spectrogram(speech, n_mels=128)  # 提取 log-mel spectrogram 特征
+        # 使用 ONNX 模型将语音特征转换为 speech token 序列，词表大小为4096；就是论文中的speech tokenizer
         speech_token = self.speech_tokenizer_session.run(None,
                                                          {self.speech_tokenizer_session.get_inputs()[0].name:
                                                           feat.detach().cpu().numpy(),
@@ -139,17 +140,17 @@ class CosyVoiceFrontEnd:
         return model_input
 
     def frontend_zero_shot(self, tts_text, prompt_text, prompt_speech_16k, resample_rate):
-        tts_text_token, tts_text_token_len = self._extract_text_token(tts_text)
-        prompt_text_token, prompt_text_token_len = self._extract_text_token(prompt_text)
-        prompt_speech_resample = torchaudio.transforms.Resample(orig_freq=16000, new_freq=resample_rate)(prompt_speech_16k)
-        speech_feat, speech_feat_len = self._extract_speech_feat(prompt_speech_resample)
-        speech_token, speech_token_len = self._extract_speech_token(prompt_speech_16k)
+        tts_text_token, tts_text_token_len = self._extract_text_token(tts_text)  # 将tts_text文本转为tokens对应的ids序列
+        prompt_text_token, prompt_text_token_len = self._extract_text_token(prompt_text)  # 将prompt_text文本转为tokens对应的ids序列
+        prompt_speech_resample = torchaudio.transforms.Resample(orig_freq=16000, new_freq=resample_rate)(prompt_speech_16k)  # 将prompt_speech_16k音频重采样为resample_rate
+        speech_feat, speech_feat_len = self._extract_speech_feat(prompt_speech_resample)  # 提取prompt_speech_resample音频的mel谱图特征
+        speech_token, speech_token_len = self._extract_speech_token(prompt_speech_16k)  # 提取prompt_speech_16k音频的speech token序列   
         if resample_rate == 24000:
             # cosyvoice2, force speech_feat % speech_token = 2
             token_len = min(int(speech_feat.shape[1] / 2), speech_token.shape[1])
             speech_feat, speech_feat_len[:] = speech_feat[:, :2 * token_len], 2 * token_len
             speech_token, speech_token_len[:] = speech_token[:, :token_len], token_len
-        embedding = self._extract_spk_embedding(prompt_speech_16k)
+        embedding = self._extract_spk_embedding(prompt_speech_16k)  # 提取prompt_speech_16k的说话人embedding
         model_input = {'text': tts_text_token, 'text_len': tts_text_token_len,
                        'prompt_text': prompt_text_token, 'prompt_text_len': prompt_text_token_len,
                        'llm_prompt_speech_token': speech_token, 'llm_prompt_speech_token_len': speech_token_len,

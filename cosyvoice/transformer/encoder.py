@@ -236,7 +236,7 @@ class BaseEncoder(torch.nn.Module):
         chunk_size = xs.size(1)
         attention_key_size = cache_t1 + chunk_size
         pos_emb = self.embed.position_encoding(offset=offset - cache_t1,
-                                               size=attention_key_size)
+                                               size=attention_key_size)  # 当前chunk的位置编码
         if required_cache_size < 0:
             next_cache_start = 0
         elif required_cache_size == 0:

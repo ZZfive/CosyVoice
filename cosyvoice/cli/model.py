@@ -280,6 +280,7 @@ class CosyVoice2Model:
         self.speech_window = np.hamming(2 * self.source_cache_len)
         # rtf and decoding related
         self.stream_scale_factor = 1
+        # 创建了一个CUDA流(CUDA Stream)上下文管理器，主要用于LLM(大语言模型)推理时的并行计算优化
         self.llm_context = torch.cuda.stream(torch.cuda.Stream(self.device)) if torch.cuda.is_available() else nullcontext()
         self.lock = threading.Lock()
         # dict used to store session related variable
@@ -330,8 +331,8 @@ class CosyVoice2Model:
                                         prompt_speech_token=llm_prompt_speech_token.to(self.device),
                                         prompt_speech_token_len=torch.tensor([llm_prompt_speech_token.shape[1]], dtype=torch.int32).to(self.device),
                                         embedding=llm_embedding.to(self.device)):
-                self.tts_speech_token_dict[uuid].append(i)
-        self.llm_end_dict[uuid] = True
+                self.tts_speech_token_dict[uuid].append(i)  # 记录单次推理预测输出的token id
+        self.llm_end_dict[uuid] = True  # 标记LLM推理部分解码结束
 
     def token2wav(self, token, prompt_token, prompt_feat, embedding, uuid, token_offset, finalize=False, speed=1.0):
         tts_mel, _ = self.flow.inference(token=token.to(self.device),
@@ -341,7 +342,7 @@ class CosyVoice2Model:
                                          prompt_feat=prompt_feat.to(self.device),
                                          prompt_feat_len=torch.tensor([prompt_feat.shape[1]], dtype=torch.int32).to(self.device),
                                          embedding=embedding.to(self.device),
-                                         finalize=finalize)
+                                         finalize=finalize)   # flow matching解码采样
         tts_mel = tts_mel[:, :, token_offset * self.flow.token_mel_ratio:]
         # append hift cache
         if self.hift_cache_dict[uuid] is not None:

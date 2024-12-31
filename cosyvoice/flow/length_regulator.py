@@ -18,7 +18,7 @@ from torch.nn import functional as F
 from cosyvoice.utils.mask import make_pad_mask
 
 
-class InterpolateRegulator(nn.Module):
+class InterpolateRegulator(nn.Module):  # 长度调节器，主要用于处理语音合成中的时长调整
     def __init__(
             self,
             channels: int,
@@ -52,7 +52,7 @@ class InterpolateRegulator(nn.Module):
     def inference(self, x1, x2, mel_len1, mel_len2, input_frame_rate=50):
         # in inference mode, interploate prompt token and token(head/mid/tail) seprately, so we can get a clear separation point of mel
         # x in (B, T, D)
-        if x2.shape[1] > 40:
+        if x2.shape[1] > 40:  # 将x2的长度通过插值调整到mel_len2；如果x2的长度大于40，则进行分段插值
             x2_head = F.interpolate(x2[:, :20].transpose(1, 2).contiguous(), size=int(20 / input_frame_rate * 22050 / 256), mode='linear')
             x2_mid = F.interpolate(x2[:, 20:-20].transpose(1, 2).contiguous(), size=mel_len2 - int(20 / input_frame_rate * 22050 / 256) * 2,
                                    mode='linear')

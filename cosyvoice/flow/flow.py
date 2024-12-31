@@ -103,47 +103,49 @@ class MaskedDiffWithXvec(torch.nn.Module):
 
     @torch.inference_mode()
     def inference(self,
-                  token,
+                  token,  # 预测出的speech tokens序列，shape: [1, token_len]
                   token_len,
-                  prompt_token,
+                  prompt_token,  # 参考音频中提取的speech tokens序列，即使同一个参考音频提取的长度也不固定，shape: [1, prompt_token_len, 512]
                   prompt_token_len,
-                  prompt_feat,
-                  prompt_feat_len,
-                  embedding,
+                  prompt_feat,  # 参考音频的mel谱图特征，shape: [1, mel_len1, 80]
+                  prompt_feat_len,  
+                  embedding,  # 说话人embedding特征，shape: [1, 192]
                   flow_cache):
         assert token.shape[0] == 1
         # xvec projection
-        embedding = F.normalize(embedding, dim=1)
-        embedding = self.spk_embed_affine_layer(embedding)
+        embedding = F.normalize(embedding, dim=1)  # [1, 192]
+        embedding = self.spk_embed_affine_layer(embedding)  # [1, 80]
 
         # concat text and prompt_text
         token_len1, token_len2 = prompt_token.shape[1], token.shape[1]
         token, token_len = torch.concat([prompt_token, token], dim=1), prompt_token_len + token_len
         mask = (~make_pad_mask(token_len)).unsqueeze(-1).to(embedding)
-        token = self.input_embedding(torch.clamp(token, min=0)) * mask
+        token = self.input_embedding(torch.clamp(token, min=0)) * mask  # [1, token_len, 512]
 
         # text encode
-        h, h_lengths = self.encoder(token, token_len)
-        h = self.encoder_proj(h)
+        h, h_lengths = self.encoder(token, token_len)  # [1, token_len, 512]
+        h = self.encoder_proj(h)  # [1, token_len, 80]
+        # 没有使用时长预测器，而是直接基于预测的token 序列长度计算mel谱图长度，然后再使用下面的length_regulator进行插值，调整mel谱图序列长度
         mel_len1, mel_len2 = prompt_feat.shape[1], int(token_len2 / self.input_frame_rate * 22050 / 256)
+        # h[:, :token_len1]是参考音频提取的speech tokens的编码结果，h[:, token_len1:]是预测的speech tokens编码结果，mel_len1, mel_len2分别对应前两者的mel谱图长度；输出[1, mel_len1 + mel_len2, 80]
         h, h_lengths = self.length_regulator.inference(h[:, :token_len1], h[:, token_len1:], mel_len1, mel_len2, self.input_frame_rate)
 
         # get conditions
-        conds = torch.zeros([1, mel_len1 + mel_len2, self.output_size], device=token.device)
-        conds[:, :mel_len1] = prompt_feat
-        conds = conds.transpose(1, 2)
+        conds = torch.zeros([1, mel_len1 + mel_len2, self.output_size], device=token.device)  # [1, mel_len1 + mel_len2, 80]
+        conds[:, :mel_len1] = prompt_feat  # 将参考音频的mel谱图特征复制到conds中
+        conds = conds.transpose(1, 2)  # [1, 80, mel_len1 + mel_len2]
 
-        mask = (~make_pad_mask(torch.tensor([mel_len1 + mel_len2]))).to(h)
+        mask = (~make_pad_mask(torch.tensor([mel_len1 + mel_len2]))).to(h)  # [1, mel_len1 + mel_len2]
         feat, flow_cache = self.decoder(
-            mu=h.transpose(1, 2).contiguous(),
-            mask=mask.unsqueeze(1),
-            spks=embedding,
-            cond=conds,
+            mu=h.transpose(1, 2).contiguous(),  # [1, 80, mel_len1 + mel_len2]
+            mask=mask.unsqueeze(1),  # [1, 1, mel_len1 + mel_len2]
+            spks=embedding,  # [1, 80]
+            cond=conds,  # [1, 80, mel_len1 + mel_len2]
             n_timesteps=10,
             prompt_len=mel_len1,
             flow_cache=flow_cache
         )
-        feat = feat[:, :, mel_len1:]
+        feat = feat[:, :, mel_len1:]  # [1, 80, mel_len2]；后半段是预测出的speech tokens对应的mel谱图特征
         assert feat.shape[2] == mel_len2
         return feat, flow_cache
 

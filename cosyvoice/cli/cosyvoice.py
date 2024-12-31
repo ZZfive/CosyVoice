@@ -31,13 +31,13 @@ class CosyVoice:
         if not os.path.exists(model_dir):
             model_dir = snapshot_download(model_dir)
         with open('{}/cosyvoice.yaml'.format(model_dir), 'r') as f:
-            configs = load_hyperpyyaml(f)
+            configs = load_hyperpyyaml(f)  # 可以直接基于yaml文件实例化python对象，此过程会将模型实例化
         assert get_model_type(configs) == CosyVoiceModel, 'do not use {} for CosyVoice initialization!'.format(model_dir)
-        self.frontend = CosyVoiceFrontEnd(configs['get_tokenizer'],
-                                          configs['feat_extractor'],
-                                          '{}/campplus.onnx'.format(model_dir),
-                                          '{}/speech_tokenizer_v1.onnx'.format(model_dir),
-                                          '{}/spk2info.pt'.format(model_dir),
+        self.frontend = CosyVoiceFrontEnd(configs['get_tokenizer'],  # whisper中的tokenizer，用于对文本进行编码
+                                          configs['feat_extractor'],  # 音频mel谱图提取器
+                                          '{}/campplus.onnx'.format(model_dir),  # campplus模型，是一个说话人特征提取模型
+                                          '{}/speech_tokenizer_v1.onnx'.format(model_dir),  # 语音tokenizer，将语音信号离散为token序列
+                                          '{}/spk2info.pt'.format(model_dir),  # 预先提取的说话人embedding
                                           configs['allowed_special'])
         self.sample_rate = configs['sample_rate']
         if torch.cuda.is_available() is False and (fp16 is True or load_jit is True):
@@ -45,14 +45,14 @@ class CosyVoice:
             fp16 = False
             logging.warning('cpu do not support fp16 and jit, force set to False')
         self.model = CosyVoiceModel(configs['llm'], configs['flow'], configs['hift'], fp16)
-        self.model.load('{}/llm.pt'.format(model_dir),
+        self.model.load('{}/llm.pt'.format(model_dir),  # 加载cosyvoice模型各个组件的权重
                         '{}/flow.pt'.format(model_dir),
                         '{}/hift.pt'.format(model_dir))
-        if load_jit:
+        if load_jit:  # 将llm中的text_encoder和llm，flow中的encoder更新为jit模型
             self.model.load_jit('{}/llm.text_encoder.fp16.zip'.format(model_dir),
                                 '{}/llm.llm.fp16.zip'.format(model_dir),
                                 '{}/flow.encoder.fp32.zip'.format(model_dir))
-        if load_onnx:
+        if load_onnx:  # 将flow中的decoder的estimator更新为onnx模型
             self.model.load_onnx('{}/flow.decoder.estimator.fp32.onnx'.format(model_dir))
         del configs
 
@@ -72,7 +72,7 @@ class CosyVoice:
                 start_time = time.time()
 
     def inference_zero_shot(self, tts_text, prompt_text, prompt_speech_16k, stream=False, speed=1.0, text_frontend=True):
-        prompt_text = self.frontend.text_normalize(prompt_text, split=False, text_frontend=text_frontend)
+        prompt_text = self.frontend.text_normalize(prompt_text, split=False, text_frontend=text_frontend)  # 对输出参考音频文本进行处理
         for i in tqdm(self.frontend.text_normalize(tts_text, split=True, text_frontend=text_frontend)):
             if len(i) < 0.5 * len(prompt_text):
                 logging.warning('synthesis text {} too short than prompt text {}, this may lead to bad performance'.format(i, prompt_text))
