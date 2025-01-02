@@ -29,8 +29,8 @@ class Executor:
         self.gan = gan
         self.step = 0
         self.epoch = 0
-        self.rank = int(os.environ.get('RANK', 0))
-        self.device = torch.device('cuda:{}'.format(self.rank))
+        self.rank = int(os.environ.get('RANK', 0))  # 获取当前进程的rank
+        self.device = torch.device('cuda:{}'.format(self.rank))  # 获取当前进程的GPU设备
 
     def train_one_epoc(self, model, optimizer, scheduler, train_data_loader, cv_data_loader, writer, info_dict, scaler, group_join):
         ''' Train one epoch
@@ -51,7 +51,7 @@ class Executor:
                 info_dict["step"] = self.step
                 info_dict["epoch"] = self.epoch
                 info_dict["batch_idx"] = batch_idx
-                if cosyvoice_join(group_join, info_dict):
+                if cosyvoice_join(group_join, info_dict):  # 如果检测到不均衡的工作负载，停止当前进程
                     break
 
                 # Disable gradient synchronizations across DDP processes.
@@ -65,21 +65,21 @@ class Executor:
                     context = nullcontext
 
                 with context():
-                    info_dict = batch_forward(model, batch_dict, scaler, info_dict)
-                    info_dict = batch_backward(model, scaler, info_dict)
+                    info_dict = batch_forward(model, batch_dict, scaler, info_dict)  # 前向计算
+                    info_dict = batch_backward(model, scaler, info_dict)  # 反向传播，计算梯度
 
-                info_dict = update_parameter_and_lr(model, optimizer, scheduler, scaler, info_dict)
-                log_per_step(writer, info_dict)
+                info_dict = update_parameter_and_lr(model, optimizer, scheduler, scaler, info_dict)  # 更新参数和学习率
+                log_per_step(writer, info_dict)  # 记录训练过程中的信息
                 # NOTE specify save_per_step in cosyvoice.yaml if you want to enable step save
                 if info_dict['save_per_step'] > 0 and (self.step + 1) % info_dict['save_per_step'] == 0 and \
-                   (batch_idx + 1) % info_dict["accum_grad"] == 0:
-                    dist.barrier()
+                   (batch_idx + 1) % info_dict["accum_grad"] == 0:  # 保存模型
+                    dist.barrier()  # 等待所有进程完成
                     self.cv(model, cv_data_loader, writer, info_dict, on_batch_end=False)
                     model.train()
-                if (batch_idx + 1) % info_dict["accum_grad"] == 0:
+                if (batch_idx + 1) % info_dict["accum_grad"] == 0:  # 达到累积梯度次数，更新步数
                     self.step += 1
-        dist.barrier()
-        self.cv(model, cv_data_loader, writer, info_dict, on_batch_end=True)
+        dist.barrier()  # 等待所有进程完成
+        self.cv(model, cv_data_loader, writer, info_dict, on_batch_end=True)  # 交叉验证
 
     def train_one_epoc_gan(self, model, optimizer, scheduler, optimizer_d, scheduler_d, train_data_loader, cv_data_loader,
                            writer, info_dict, scaler, group_join):

@@ -24,7 +24,7 @@ class HiFiGan(nn.Module):
             batch: dict,
             device: torch.device,
     ) -> Dict[str, Optional[torch.Tensor]]:
-        if batch['turn'] == 'generator':
+        if batch['turn'] == 'generator':  # 通过数据集中的turn字段判断是生成器还是判别器
             return self.forward_generator(batch, device)
         else:
             return self.forward_discriminator(batch, device)
