@@ -85,22 +85,22 @@ def filter(data,
             Iterable[{key, wav, label, sample_rate}]
     """
     for sample in data:
-        sample['speech'], sample['sample_rate'] = torchaudio.load(BytesIO(sample['audio_data']))
-        sample['speech'] = sample['speech'].mean(dim=0, keepdim=True)
-        del sample['audio_data']
+        sample['speech'], sample['sample_rate'] = torchaudio.load(BytesIO(sample['audio_data']))  # 加载音频数据
+        sample['speech'] = sample['speech'].mean(dim=0, keepdim=True)  # 计算音频数据的平均值
+        del sample['audio_data']  # 删除音频数据
         # sample['wav'] is torch.Tensor, we have 100 frames every second
-        num_frames = sample['speech'].size(1) / sample['sample_rate'] * 100
-        if num_frames < min_length:
+        num_frames = sample['speech'].size(1) / sample['sample_rate'] * 100  # 计算音频数据帧数
+        if num_frames < min_length:  # 如果帧数小于最小长度，则跳过该样本
             continue
-        if num_frames > max_length:
+        if num_frames > max_length:  # 如果帧数大于最大长度，则跳过该样本
             continue
-        if len(sample['text_token']) < token_min_length:
+        if len(sample['text_token']) < token_min_length:  # 如果文本token长度小于最小长度，则跳过该样本
             continue
-        if len(sample['text_token']) > token_max_length:
+        if len(sample['text_token']) > token_max_length:  # 如果文本token长度大于最大长度，则跳过该样本
             continue
-        if len(sample['speech_token']) == 0:
+        if len(sample['speech_token']) == 0:  # 如果音频token长度为0，则跳过该样本
             continue
-        if num_frames != 0:
+        if num_frames != 0:  # 如果帧数不为0
             if len(sample['text_token']) / num_frames < min_output_input_ratio:
                 continue
             if len(sample['text_token']) / num_frames > max_output_input_ratio:
@@ -125,14 +125,14 @@ def resample(data, resample_rate=22050, min_sample_rate=16000, mode='train'):
         sample_rate = sample['sample_rate']
         waveform = sample['speech']
         if sample_rate != resample_rate:
-            if sample_rate < min_sample_rate:
+            if sample_rate < min_sample_rate:  # 如果采样率小于min_sample_rate，则跳过该样本
                 continue
             sample['sample_rate'] = resample_rate
             sample['speech'] = torchaudio.transforms.Resample(
-                orig_freq=sample_rate, new_freq=resample_rate)(waveform)
+                orig_freq=sample_rate, new_freq=resample_rate)(waveform)  # 重采样
         max_val = sample['speech'].abs().max()
         if max_val > 1:
-            sample['speech'] /= max_val
+            sample['speech'] /= max_val  # 归一化
         yield sample
 
 
@@ -174,7 +174,7 @@ def compute_fbank(data,
         assert 'utt' in sample
         assert 'text_token' in sample
         waveform = sample['speech']
-        mat = feat_extractor(waveform).squeeze(dim=0).transpose(0, 1)
+        mat = feat_extractor(waveform).squeeze(dim=0).transpose(0, 1)  # 提取mel谱图特征
         sample['speech_feat'] = mat
         yield sample
 
