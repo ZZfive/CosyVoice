@@ -156,7 +156,7 @@ def main():
     for epoch in range(start_epoch + 1, info_dict['max_epoch']):
         executor.epoch = epoch  # epoch在此处更新，executor.step会在train_one_epoc内部更新
         train_dataset.set_epoch(epoch)
-        dist.barrier()  # 等待所有进程完成
+        dist.barrier()  # 进程同步；确保所有进程继续执行前都完成前面的操作，只有当所有进程都执行到dist.barrier()时，才会继续执行后面的代码
         group_join = dist.new_group(backend="gloo", timeout=datetime.timedelta(seconds=args.timeout))  # 创建一个分布式组
         if gan is True:
             executor.train_one_epoc_gan(model, optimizer, scheduler, optimizer_d, scheduler_d, train_data_loader, cv_data_loader,

@@ -39,7 +39,7 @@ class TransformerLM(torch.nn.Module):
     ):
         super().__init__()
         self.llm_input_size = llm_input_size
-        self.speech_token_size = speech_token_size
+        self.speech_token_size = speech_token_size  # 4096，speech token vocabulary size，4096也表示最终的结束token
         # 1. build text token inputs related modules
         self.text_embedding = torch.nn.Embedding(text_token_size, text_encoder_input_size)
         self.text_encoder = text_encoder
@@ -53,7 +53,7 @@ class TransformerLM(torch.nn.Module):
         self.task_id = 1  # 对应cosyvoice论文图1中的turn of speech，将文本序列和音频序列区分开来
         self.llm_embedding = torch.nn.Embedding(2, llm_input_size)
         self.llm = llm
-        self.llm_decoder = nn.Linear(llm_output_size, speech_token_size + 1)
+        self.llm_decoder = nn.Linear(llm_output_size, speech_token_size + 1)  # 将llm的输出映射到speech_token_size + 1维度的空间
         self.criterion_ce = LabelSmoothingLoss(
             size=speech_token_size + 1,
             padding_idx=IGNORE_ID,
@@ -79,12 +79,21 @@ class TransformerLM(torch.nn.Module):
         return encoder_out, encoder_out_lens
 
     def pad_unpad_sequence(self, sos_eos_emb, embedding, text_token, text_token_len, task_id_emb, speech_token, speech_token_len):
-        text_token = unpad_sequence(text_token, text_token_len.cpu(), batch_first=True)
+        '''
+        sos_eos_emb: 开始/结束token的嵌入向量
+        embedding: 说话人embedding
+        text_token: 文本token序列
+        task_id_emb: 任务id的嵌入向量
+        speech_token: 语音token序列
+        '''
+        # 解除padding，将填充的部分，得到原始的文本token和语音token
+        text_token = unpad_sequence(text_token, text_token_len.cpu(), batch_first=True)  # batch_first=True表示输出中batch size为第一个维度
         speech_token = unpad_sequence(speech_token, speech_token_len.cpu(), batch_first=True)
+        # 将开始/结束token、说话人embedding、文本token、任务id、语音token拼接在一起，得到lm_input
         lm_input = [torch.concat([sos_eos_emb.squeeze(dim=0), embedding[i], text_token[i], task_id_emb.squeeze(dim=0), speech_token[i]], dim=0)
                     for i in range(len(text_token))]
-        lm_input_len = torch.tensor([i.size(0) for i in lm_input], dtype=torch.int32)
-        lm_input = pad_sequence(lm_input, batch_first=True, padding_value=IGNORE_ID)
+        lm_input_len = torch.tensor([i.size(0) for i in lm_input], dtype=torch.int32)  # 计算lm_input的实际长度
+        lm_input = pad_sequence(lm_input, batch_first=True, padding_value=IGNORE_ID)  # 将lm_input填充到同一长度，并添加IGNORE_ID作为填充值
         return lm_input, lm_input_len
 
     def forward(
@@ -99,11 +108,11 @@ class TransformerLM(torch.nn.Module):
             audio: (B, T, N) or (B, T)
             audio_lengths: (B,)
         """
-        text_token = batch['text_token'].to(device)
-        text_token_len = batch['text_token_len'].to(device)
-        speech_token = batch['speech_token'].to(device)
-        speech_token_len = batch['speech_token_len'].to(device)
-        embedding = batch['embedding'].to(device)
+        text_token = batch['text_token'].to(device)  # 音频内容文本token序列
+        text_token_len = batch['text_token_len'].to(device)  # 音频内容文本token序列长度
+        speech_token = batch['speech_token'].to(device)  # 音频内容语音token序列
+        speech_token_len = batch['speech_token_len'].to(device)  # 音频内容语音token序列长度
+        embedding = batch['embedding'].to(device)  # 音频内容说话人embedding
 
         # 1. prepare llm_target
         lm_target = [torch.tensor([IGNORE_ID] * (2 + text_token_len[i]) + speech_token[i, :speech_token_len[i]].tolist() +
@@ -131,10 +140,10 @@ class TransformerLM(torch.nn.Module):
                                                          task_id_emb, speech_token, speech_token_len)
 
         # 6. run lm forward
-        lm_output, lm_output_mask = self.llm(lm_input, lm_input_len.to(device))
+        lm_output, lm_output_mask = self.llm(lm_input, lm_input_len.to(device))  # llm部分的主要前向计算
         logits = self.llm_decoder(lm_output)
-        loss = self.criterion_ce(logits, lm_target)
-        acc = th_accuracy(logits.view(-1, self.speech_token_size + 1), lm_target, ignore_label=IGNORE_ID)
+        loss = self.criterion_ce(logits, lm_target)  # 计算交叉熵损失
+        acc = th_accuracy(logits.view(-1, self.speech_token_size + 1), lm_target, ignore_label=IGNORE_ID)  # 计算准确率
         return {'loss': loss, 'acc': acc}
 
     def sampling_ids(

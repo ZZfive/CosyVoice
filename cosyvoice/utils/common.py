@@ -73,8 +73,11 @@ def pad_list(xs: List[torch.Tensor], pad_value: int):
     return pad_res
 
 
-def th_accuracy(pad_outputs: torch.Tensor, pad_targets: torch.Tensor,
-                ignore_label: int) -> torch.Tensor:
+def th_accuracy(
+    pad_outputs: torch.Tensor,  # 模型预测输出 (B * Lmax, D)
+    pad_targets: torch.Tensor,  # 目标标签 (B, Lmax)
+    ignore_label: int          # 需要忽略的标签ID（通常是填充值）
+) -> torch.Tensor:            # 返回准确率（0.0-1.0）
     """Calculate accuracy.
 
     Args:
@@ -87,12 +90,12 @@ def th_accuracy(pad_outputs: torch.Tensor, pad_targets: torch.Tensor,
 
     """
     pad_pred = pad_outputs.view(pad_targets.size(0), pad_targets.size(1),
-                                pad_outputs.size(1)).argmax(2)
-    mask = pad_targets != ignore_label
+                                pad_outputs.size(1)).argmax(2)  # 将pad_outputs展平为(B, Lmax, D)，然后取最后一个维度上概率最大值，最终shape为(B, Lmax)的预测标签
+    mask = pad_targets != ignore_label  # 创建一个掩码，用于忽略填充的标签
     numerator = torch.sum(
-        pad_pred.masked_select(mask) == pad_targets.masked_select(mask))
-    denominator = torch.sum(mask)
-    return (numerator / denominator).detach()
+        pad_pred.masked_select(mask) == pad_targets.masked_select(mask))  # 计算预测标签与目标标签匹配的数量
+    denominator = torch.sum(mask)  # 计算非填充标签的数量
+    return (numerator / denominator).detach()  # 计算准确率，并返回
 
 
 def get_padding(kernel_size, dilation=1):

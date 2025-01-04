@@ -72,7 +72,7 @@ class Executor:
                 log_per_step(writer, info_dict)  # 记录训练过程中的信息
                 # NOTE specify save_per_step in cosyvoice.yaml if you want to enable step save
                 if info_dict['save_per_step'] > 0 and (self.step + 1) % info_dict['save_per_step'] == 0 and \
-                   (batch_idx + 1) % info_dict["accum_grad"] == 0:  # 保存模型
+                   (batch_idx + 1) % info_dict["accum_grad"] == 0:  # 交叉验证
                     dist.barrier()  # 等待所有进程完成
                     self.cv(model, cv_data_loader, writer, info_dict, on_batch_end=False)
                     model.train()
