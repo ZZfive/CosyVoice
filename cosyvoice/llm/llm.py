@@ -173,6 +173,9 @@ class TransformerLM(torch.nn.Module):
             max_token_text_ratio: float = 20,
             min_token_text_ratio: float = 2,
     ) -> Generator[torch.Tensor, None, None]:
+        if self.fp16 is True:
+            embedding = embedding.half()
+
         device = text.device
         text = torch.concat([prompt_text, text], dim=1)  # 参考音频对应的文本prompt_text和输入目标文本text拼接
         text_len += prompt_text_len
@@ -187,7 +190,7 @@ class TransformerLM(torch.nn.Module):
             embedding = self.spk_embed_affine_layer(embedding)  # 将说话人embedding特征映射到llm_input_size维度的空间 [1, 1024]
             embedding = embedding.unsqueeze(dim=1)  # 在第1维上增加一个维度，使得embedding的维度为 [batch_size, 1, llm_input_size] [1, 1, 1024]
         else:
-            embedding = torch.zeros(1, 0, self.llm_input_size, dtype=text.dtype).to(device)  # 如果embedding为空，则初始化一个全0的embedding，维度为 [1, 0, 1024]
+            embedding = torch.zeros(1, 0, self.llm_input_size, dtype=text.dtype).to(device).to(text.dtype)  # 如果embedding为空，则初始化一个全0的embedding，维度为 [1, 0, 1024]
 
         # 3. concat llm_input
         sos_eos_emb = self.llm_embedding.weight[self.sos_eos].reshape(1, 1, -1)  # 获取sos和eos的token id对应的嵌入向量 [1, 1, 1024]
@@ -319,7 +322,7 @@ class Qwen2LM(torch.nn.Module):
         text = self.llm.model.model.embed_tokens(text)
 
         # 2. encode embedding
-        embedding = torch.zeros(1, 0, self.llm_input_size, dtype=text.dtype).to(device)
+        embedding = torch.zeros(1, 0, self.llm_input_size, dtype=text.dtype).to(device).to(text.dtype)
 
         # 3. concat llm_input
         sos_eos_emb = self.llm_embedding.weight[self.sos_eos].reshape(1, 1, -1)

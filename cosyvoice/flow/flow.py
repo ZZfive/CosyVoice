@@ -111,6 +111,10 @@ class MaskedDiffWithXvec(torch.nn.Module):
                   prompt_feat_len,  
                   embedding,  # 说话人embedding特征，shape: [1, 192]
                   flow_cache):
+        if self.fp16 is True:
+            prompt_feat = prompt_feat.half()
+            embedding = embedding.half()
+
         assert token.shape[0] == 1
         # xvec projection
         embedding = F.normalize(embedding, dim=1)  # [1, 192]
@@ -131,7 +135,7 @@ class MaskedDiffWithXvec(torch.nn.Module):
         h, h_lengths = self.length_regulator.inference(h[:, :token_len1], h[:, token_len1:], mel_len1, mel_len2, self.input_frame_rate)
 
         # get conditions
-        conds = torch.zeros([1, mel_len1 + mel_len2, self.output_size], device=token.device)  # [1, mel_len1 + mel_len2, 80]
+        conds = torch.zeros([1, mel_len1 + mel_len2, self.output_size], device=token.device).to(h.dtype)  # [1, mel_len1 + mel_len2, 80]
         conds[:, :mel_len1] = prompt_feat  # 将参考音频的mel谱图特征复制到conds中
         conds = conds.transpose(1, 2)  # [1, 80, mel_len1 + mel_len2]
 
@@ -147,7 +151,7 @@ class MaskedDiffWithXvec(torch.nn.Module):
         )
         feat = feat[:, :, mel_len1:]  # [1, 80, mel_len2]；后半段是预测出的speech tokens对应的mel谱图特征
         assert feat.shape[2] == mel_len2
-        return feat, flow_cache
+        return feat.float(), flow_cache
 
 
 class CausalMaskedDiffWithXvec(torch.nn.Module):
@@ -198,6 +202,10 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
                   prompt_feat_len,
                   embedding,
                   finalize):
+        if self.fp16 is True:
+            prompt_feat = prompt_feat.half()
+            embedding = embedding.half()
+
         assert token.shape[0] == 1
         # xvec projection
         embedding = F.normalize(embedding, dim=1)
@@ -216,7 +224,7 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
         h = self.encoder_proj(h)
 
         # get conditions
-        conds = torch.zeros([1, mel_len1 + mel_len2, self.output_size], device=token.device)
+        conds = torch.zeros([1, mel_len1 + mel_len2, self.output_size], device=token.device).to(h.dtype)
         conds[:, :mel_len1] = prompt_feat
         conds = conds.transpose(1, 2)
 
@@ -230,4 +238,4 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
         )
         feat = feat[:, :, mel_len1:]
         assert feat.shape[2] == mel_len2
-        return feat, None
+        return feat.float(), None

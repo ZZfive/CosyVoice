@@ -25,14 +25,15 @@ from cosyvoice.utils.class_utils import get_model_type
 
 class CosyVoice:
 
-    def __init__(self, model_dir, load_jit=True, load_onnx=False, fp16=True):
+    def __init__(self, model_dir, load_jit=False, load_trt=False, fp16=False):
         self.instruct = True if '-Instruct' in model_dir else False
         self.model_dir = model_dir
+        self.fp16 = fp16
         if not os.path.exists(model_dir):
             model_dir = snapshot_download(model_dir)
         with open('{}/cosyvoice.yaml'.format(model_dir), 'r') as f:
             configs = load_hyperpyyaml(f)  # 可以直接基于yaml文件实例化python对象，此过程会将模型实例化
-        assert get_model_type(configs) == CosyVoiceModel, 'do not use {} for CosyVoice initialization!'.format(model_dir)
+        assert get_model_type(configs) != CosyVoice2Model, 'do not use {} for CosyVoice initialization!'.format(model_dir)
         self.frontend = CosyVoiceFrontEnd(configs['get_tokenizer'],  # whisper中的tokenizer，用于对文本进行编码
                                           configs['feat_extractor'],  # 音频mel谱图提取器
                                           '{}/campplus.onnx'.format(model_dir),  # campplus模型，是一个说话人特征提取模型
@@ -40,20 +41,19 @@ class CosyVoice:
                                           '{}/spk2info.pt'.format(model_dir),  # 预先提取的说话人embedding
                                           configs['allowed_special'])
         self.sample_rate = configs['sample_rate']
-        if torch.cuda.is_available() is False and (fp16 is True or load_jit is True):
-            load_jit = False
-            fp16 = False
-            logging.warning('cpu do not support fp16 and jit, force set to False')
+        if torch.cuda.is_available() is False and (load_jit is True or load_trt is True or fp16 is True):
+            load_jit, load_trt, fp16 = False, False, False
+            logging.warning('no cuda device, set load_jit/load_trt/fp16 to False')
         self.model = CosyVoiceModel(configs['llm'], configs['flow'], configs['hift'], fp16)
         self.model.load('{}/llm.pt'.format(model_dir),  # 加载cosyvoice模型各个组件的权重
                         '{}/flow.pt'.format(model_dir),
                         '{}/hift.pt'.format(model_dir))
         if load_jit:  # 将llm中的text_encoder和llm，flow中的encoder更新为jit模型
-            self.model.load_jit('{}/llm.text_encoder.fp16.zip'.format(model_dir),
-                                '{}/llm.llm.fp16.zip'.format(model_dir),
-                                '{}/flow.encoder.fp32.zip'.format(model_dir))
-        if load_onnx:  # 将flow中的decoder的estimator更新为onnx模型
-            self.model.load_onnx('{}/flow.decoder.estimator.fp32.onnx'.format(model_dir))
+            self.model.load_jit('{}/llm.text_encoder.{}.zip'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'),
+                                '{}/llm.llm.{}.zip'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'),
+                                '{}/flow.encoder.{}.zip'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'))
+        if load_trt:
+            self.model.load_trt('{}/flow.decoder.estimator.{}.v100.plan'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'))
         del configs
 
     def list_available_spks(self):
@@ -123,9 +123,10 @@ class CosyVoice:
 
 class CosyVoice2(CosyVoice):
 
-    def __init__(self, model_dir, load_jit=False, load_onnx=False, load_trt=False):
+    def __init__(self, model_dir, load_jit=False, load_trt=False, fp16=False):
         self.instruct = True if '-Instruct' in model_dir else False
         self.model_dir = model_dir
+        self.fp16 = fp16
         if not os.path.exists(model_dir):
             model_dir = snapshot_download(model_dir)
         with open('{}/cosyvoice.yaml'.format(model_dir), 'r') as f:
@@ -138,22 +139,17 @@ class CosyVoice2(CosyVoice):
                                           '{}/spk2info.pt'.format(model_dir),
                                           configs['allowed_special'])
         self.sample_rate = configs['sample_rate']
-        if torch.cuda.is_available() is False and load_jit is True:
-            load_jit = False
-            logging.warning('cpu do not support jit, force set to False')
-        self.model = CosyVoice2Model(configs['llm'], configs['flow'], configs['hift'])
+        if torch.cuda.is_available() is False and (load_jit is True or load_trt is True or fp16 is True):
+            load_jit, load_trt, fp16 = False, False, False
+            logging.warning('no cuda device, set load_jit/load_trt/fp16 to False')
+        self.model = CosyVoice2Model(configs['llm'], configs['flow'], configs['hift'], fp16)
         self.model.load('{}/llm.pt'.format(model_dir),
                         '{}/flow.pt'.format(model_dir),
                         '{}/hift.pt'.format(model_dir))
         if load_jit:
-            self.model.load_jit('{}/flow.encoder.fp32.zip'.format(model_dir))
-        if load_trt is True and load_onnx is True:
-            load_onnx = False
-            logging.warning('can not set both load_trt and load_onnx to True, force set load_onnx to False')
-        if load_onnx:
-            self.model.load_onnx('{}/flow.decoder.estimator.fp32.onnx'.format(model_dir))
+            self.model.load_jit('{}/flow.encoder.{}.zip'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'))
         if load_trt:
-            self.model.load_trt('{}/flow.decoder.estimator.fp16.Volta.plan'.format(model_dir))
+            self.model.load_trt('{}/flow.decoder.estimator.{}.v100.plan'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'))
         del configs
 
     def inference_instruct(self, *args, **kwargs):

@@ -80,8 +80,6 @@ sudo yum install sox sox-devel
 
 We strongly recommend that you download our pretrained `CosyVoice2-0.5B` `CosyVoice-300M` `CosyVoice-300M-SFT` `CosyVoice-300M-Instruct` model and `CosyVoice-ttsfrd` resource.
 
-If you are expert in this field, and you are only interested in training your own CosyVoice model from scratch, you can skip this step.
-
 ``` python
 # SDK模型下载
 from modelscope import snapshot_download
@@ -118,9 +116,7 @@ pip install ttsfrd-0.4.2-cp310-cp310-linux_x86_64.whl
 **Basic Usage**
 
 We strongly recommend using `CosyVoice2-0.5B` for better performance.
-For zero_shot/cross_lingual inference, please use `CosyVoice-300M` model.
-For sft inference, please use `CosyVoice-300M-SFT` model.
-For instruct inference, please use `CosyVoice-300M-Instruct` model.
+Follow code below for detailed usage of each model.
 
 ``` python
 import sys
@@ -132,7 +128,7 @@ import torchaudio
 
 **CosyVoice2 Usage**
 ```python
-cosyvoice = CosyVoice2('pretrained_models/CosyVoice2-0.5B', load_jit=True, load_onnx=False, load_trt=False)
+cosyvoice = CosyVoice2('pretrained_models/CosyVoice2-0.5B', load_jit=False, load_trt=False, fp16=False)
 
 # NOTE if you want to reproduce the results on https://funaudiollm.github.io/cosyvoice2, please add text_frontend=False during inference
 # zero_shot usage
@@ -151,7 +147,7 @@ for i, j in enumerate(cosyvoice.inference_instruct2('收到好友从远方寄来
 
 **CosyVoice Usage**
 ```python
-cosyvoice = CosyVoice('pretrained_models/CosyVoice-300M-SFT', load_jit=True, load_onnx=False, fp16=True)
+cosyvoice = CosyVoice('pretrained_models/CosyVoice-300M-SFT', load_jit=False, load_trt=False, fp16=False)
 # sft usage
 print(cosyvoice.list_available_spks())
 # change stream=True for chunk stream inference
@@ -182,7 +178,6 @@ for i, j in enumerate(cosyvoice.inference_instruct('在面对挑战时，他展�
 **Start web demo**
 
 You can use our web demo page to get familiar with CosyVoice quickly.
-We support sft/zero_shot/cross_lingual/instruct inference in web demo.
 
 Please see the demo website for details.
 
@@ -194,12 +189,11 @@ python3 webui.py --port 50000 --model_dir pretrained_models/CosyVoice-300M
 **Advanced Usage**
 
 For advanced user, we have provided train and inference scripts in `examples/libritts/cosyvoice/run.sh`.
-You can get familiar with CosyVoice following this recipie.
 
 **Build for deployment**
 
-Optionally, if you want to use grpc for service deployment,
-you can run following steps. Otherwise, you can just ignore this step.
+Optionally, if you want service deployment,
+you can run following steps.
 
 ``` sh
 cd runtime/python
