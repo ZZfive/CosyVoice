@@ -148,11 +148,11 @@ def truncate(data, truncate_length=24576, mode='train'):
     """
     for sample in data:
         waveform = sample['speech']
-        if waveform.shape[1] > truncate_length:
+        if waveform.shape[1] > truncate_length:  # 如果音频数据长度大于truncate_length，则随机截取一段音频数据
             start = random.randint(0, waveform.shape[1] - truncate_length)
             waveform = waveform[:, start: start + truncate_length]
         else:
-            waveform = torch.concat([waveform, torch.zeros(1, truncate_length - waveform.shape[1])], dim=1)
+            waveform = torch.concat([waveform, torch.zeros(1, truncate_length - waveform.shape[1])], dim=1)  # 如果音频数据长度小于truncate_length，则填充0
         sample['speech'] = waveform
         yield sample
 
@@ -194,8 +194,8 @@ def compute_f0(data, pitch_extractor, mode='train'):
         assert 'utt' in sample
         assert 'text_token' in sample
         waveform = sample['speech']
-        mat = pitch_extractor(waveform).transpose(1, 2)
-        mat = F.interpolate(mat, size=sample['speech_feat'].shape[0], mode='linear')
+        mat = pitch_extractor(waveform).transpose(1, 2)  # 提取基频
+        mat = F.interpolate(mat, size=sample['speech_feat'].shape[0], mode='linear')  # 插值
         sample['pitch_feat'] = mat[0, 0]
         yield sample
 
@@ -210,11 +210,11 @@ def parse_embedding(data, normalize, mode='train'):
             Iterable[{key, feat, label}]
     """
     for sample in data:
-        sample['utt_embedding'] = torch.tensor(sample['utt_embedding'], dtype=torch.float32)
-        sample['spk_embedding'] = torch.tensor(sample['spk_embedding'], dtype=torch.float32)
+        sample['utt_embedding'] = torch.tensor(sample['utt_embedding'], dtype=torch.float32)  # 将utt_embedding转换为torch.Tensor
+        sample['spk_embedding'] = torch.tensor(sample['spk_embedding'], dtype=torch.float32)  # 将spk_embedding转换为torch.Tensor
         if normalize:
-            sample['utt_embedding'] = F.normalize(sample['utt_embedding'], dim=0)
-            sample['spk_embedding'] = F.normalize(sample['spk_embedding'], dim=0)
+            sample['utt_embedding'] = F.normalize(sample['utt_embedding'], dim=0)  # 归一化
+            sample['spk_embedding'] = F.normalize(sample['spk_embedding'], dim=0)  # 归一化
         yield sample
 
 
@@ -279,12 +279,12 @@ def sort(data, sort_size=500, mode='train'):
     for sample in data:
         buf.append(sample)
         if len(buf) >= sort_size:
-            buf.sort(key=lambda x: x['speech_feat'].size(0))
+            buf.sort(key=lambda x: x['speech_feat'].size(0))  # 根据speech_feat的长度排序
             for x in buf:
                 yield x
             buf = []
     # The sample left over
-    buf.sort(key=lambda x: x['speech_feat'].size(0))
+    buf.sort(key=lambda x: x['speech_feat'].size(0))  # 根据speech_feat的长度排序
     for x in buf:
         yield x
 
@@ -305,7 +305,7 @@ def static_batch(data, batch_size=16):
         if len(buf) >= batch_size:
             yield buf
             buf = []
-    if len(buf) > 0:
+    if len(buf) > 0:  # 返回最后一批数量不足batch_size的数据
         yield buf
 
 
@@ -326,15 +326,15 @@ def dynamic_batch(data, max_frames_in_batch=12000, mode='train'):
         assert 'speech_feat' in sample
         assert isinstance(sample['speech_feat'], torch.Tensor)
         new_sample_frames = sample['speech_feat'].size(0)
-        longest_frames = max(longest_frames, new_sample_frames)
-        frames_after_padding = longest_frames * (len(buf) + 1)
-        if frames_after_padding > max_frames_in_batch:
-            yield buf
-            buf = [sample]
-            longest_frames = new_sample_frames
+        longest_frames = max(longest_frames, new_sample_frames)  # 更新当前batch中最长音频数据的长度
+        frames_after_padding = longest_frames * (len(buf) + 1)  # 计算当前batch中所有音频数据的总长度；同一batch中所有音频数据都会通过padding到最长长度
+        if frames_after_padding > max_frames_in_batch:  # 如果当前batch中所有音频数据的总长度大于max_frames_in_batch，则返回当前batch
+            yield buf  # 返回当前batch，此时buf中还没有包含当前sample
+            buf = [sample]  # 将当前sample添加到buf中
+            longest_frames = new_sample_frames  # 更新当前batch中最长音频数据的长度
         else:
             buf.append(sample)
-    if len(buf) > 0:
+    if len(buf) > 0:  # 返回最后一批数量不足max_frames_in_batch的数据
         yield buf
 
 
@@ -362,29 +362,29 @@ def padding(data, use_spk_embedding, mode='train', gan=False):
             Iterable[Tuple(keys, feats, labels, feats lengths, label lengths)]
     """
     for sample in data:
-        assert isinstance(sample, list)
+        assert isinstance(sample, list)  # 此处的sample是batch函数返回的一个batch
         speech_feat_len = torch.tensor([x['speech_feat'].size(1) for x in sample],
-                                       dtype=torch.int32)
-        order = torch.argsort(speech_feat_len, descending=True)
+                                       dtype=torch.int32)  # 获取当前batch中所有音频mel谱图特征的长度
+        order = torch.argsort(speech_feat_len, descending=True)  # 根据mel谱图特征的长度排序
 
-        utts = [sample[i]['utt'] for i in order]
-        speech = [sample[i]['speech'].squeeze(dim=0) for i in order]
-        speech_len = torch.tensor([i.size(0) for i in speech], dtype=torch.int32)
-        speech = pad_sequence(speech, batch_first=True, padding_value=0)
-        speech_token = [torch.tensor(sample[i]['speech_token']) for i in order]
-        speech_token_len = torch.tensor([i.size(0) for i in speech_token], dtype=torch.int32)
+        utts = [sample[i]['utt'] for i in order]  # 获取当前batch中所有音频的utt
+        speech = [sample[i]['speech'].squeeze(dim=0) for i in order]  # 获取当前batch中所有音频的speech
+        speech_len = torch.tensor([i.size(0) for i in speech], dtype=torch.int32)  # 获取当前batch中所有音频的speech长度
+        speech = pad_sequence(speech, batch_first=True, padding_value=0)  # 将当前batch中所有音频的speech填充到同一长度
+        speech_token = [torch.tensor(sample[i]['speech_token']) for i in order]  # 获取当前batch中所有音频的speech_token
+        speech_token_len = torch.tensor([i.size(0) for i in speech_token], dtype=torch.int32)  # 获取当前batch中所有音频的speech_token长度
         speech_token = pad_sequence(speech_token,
                                     batch_first=True,
-                                    padding_value=0)
-        speech_feat = [sample[i]['speech_feat'] for i in order]
-        speech_feat_len = torch.tensor([i.size(0) for i in speech_feat], dtype=torch.int32)
+                                    padding_value=0)  # 将当前batch中所有音频的speech_token填充到同一长度
+        speech_feat = [sample[i]['speech_feat'] for i in order]  # 获取当前batch中所有音频的speech_feat
+        speech_feat_len = torch.tensor([i.size(0) for i in speech_feat], dtype=torch.int32)  # 获取当前batch中所有音频的speech_feat长度
         speech_feat = pad_sequence(speech_feat,
                                    batch_first=True,
-                                   padding_value=0)
-        text = [sample[i]['text'] for i in order]
-        text_token = [torch.tensor(sample[i]['text_token']) for i in order]
-        text_token_len = torch.tensor([i.size(0) for i in text_token], dtype=torch.int32)
-        text_token = pad_sequence(text_token, batch_first=True, padding_value=0)
+                                   padding_value=0)  # 将当前batch中所有音频的speech_feat填充到同一长度
+        text = [sample[i]['text'] for i in order]  # 获取当前batch中所有音频的text
+        text_token = [torch.tensor(sample[i]['text_token']) for i in order]  # 获取当前batch中所有音频的text_token序列
+        text_token_len = torch.tensor([i.size(0) for i in text_token], dtype=torch.int32)  # 获取当前batch中所有音频的text_token序列长度
+        text_token = pad_sequence(text_token, batch_first=True, padding_value=0)  # 将当前batch中所有音频的text_token序列填充到同一长度
         utt_embedding = torch.stack([sample[i]['utt_embedding'] for i in order], dim=0)
         spk_embedding = torch.stack([sample[i]['spk_embedding'] for i in order], dim=0)
         batch = {
@@ -424,8 +424,8 @@ def padding(data, use_spk_embedding, mode='train', gan=False):
                           'tts_index': tts_index,
                           'tts_text_token': tts_text_token,
                           'tts_text_token_len': tts_text_token_len})
-        if use_spk_embedding is True:
-            batch["embedding"] = batch["spk_embedding"]
+        if use_spk_embedding is True:  # 默认use_spk_embedding为False，当进行sft时，设置为True
+            batch["embedding"] = batch["spk_embedding"]  # 此为该音频中说话人所有音频中提取出的embedding的平均值
         else:
-            batch["embedding"] = batch["utt_embedding"]
+            batch["embedding"] = batch["utt_embedding"]  # 此为单个音频中提取出的说话人embedding
         yield batch
