@@ -44,8 +44,8 @@ class InterpolateRegulator(nn.Module):  # 长度调节器，主要用于处理�
     def forward(self, x, ylens=None):
         # x in (B, T, D)
         mask = (~make_pad_mask(ylens)).to(x).unsqueeze(-1)
-        x = F.interpolate(x.transpose(1, 2).contiguous(), size=ylens.max(), mode='linear')
-        out = self.model(x).transpose(1, 2).contiguous()
+        x = F.interpolate(x.transpose(1, 2).contiguous(), size=ylens.max(), mode='linear')  # 对输入的mel谱图特征进行插值，调整mel谱图序列长度
+        out = self.model(x).transpose(1, 2).contiguous()  # 将插值后的mel谱图特征通过卷积层进行处理
         olens = ylens
         return out * mask, olens
 

@@ -62,36 +62,37 @@ class MaskedDiffWithXvec(torch.nn.Module):
             batch: dict,
             device: torch.device,
     ) -> Dict[str, Optional[torch.Tensor]]:
-        token = batch['speech_token'].to(device)
+        token = batch['speech_token'].to(device)  # 输入的speech tokens序列，shape: [1, token_len]
         token_len = batch['speech_token_len'].to(device)
-        feat = batch['speech_feat'].to(device)
+        feat = batch['speech_feat'].to(device)  # 输入的mel谱图特征，shape: [1, mel_len, 80]
         feat_len = batch['speech_feat_len'].to(device)
-        embedding = batch['embedding'].to(device)
+        embedding = batch['embedding'].to(device)  # 输入的说话人embedding特征，shape: [1, 192]
 
         # xvec projection
-        embedding = F.normalize(embedding, dim=1)
-        embedding = self.spk_embed_affine_layer(embedding)
+        embedding = F.normalize(embedding, dim=1)  # 对输入的说话人embedding特征进行归一化
+        embedding = self.spk_embed_affine_layer(embedding)  # 将归一化后的说话人embedding特征映射到80维
 
         # concat text and prompt_text
-        mask = (~make_pad_mask(token_len)).float().unsqueeze(-1).to(device)
-        token = self.input_embedding(torch.clamp(token, min=0)) * mask
+        mask = (~make_pad_mask(token_len)).float().unsqueeze(-1).to(device)  # 创建一个mask，用于对输入的speech tokens序列进行填充
+        token = self.input_embedding(torch.clamp(token, min=0)) * mask  # 将输入的speech tokens序列进行embedding，并乘以mask
 
         # text encode
-        h, h_lengths = self.encoder(token, token_len)
-        h = self.encoder_proj(h)
-        h, h_lengths = self.length_regulator(h, feat_len)
+        h, h_lengths = self.encoder(token, token_len)  # [1, token_len, 512]
+        h = self.encoder_proj(h)  # [1, token_len, 80]
+        h, h_lengths = self.length_regulator(h, feat_len)  # 将输入的mel谱图特征进行插值，调整mel谱图序列长度
 
         # get conditions
         conds = torch.zeros(feat.shape, device=token.device)
         for i, j in enumerate(feat_len):
-            if random.random() < 0.5:
+            if random.random() < 0.5:  # 50%的概率不进行条件注入
                 continue
-            index = random.randint(0, int(0.3 * j))
+            index = random.randint(0, int(0.3 * j))  # 随机从mel的前30%位置中选一个索引index
+            # 将原始mel谱图（feat）从开始到这个截断点的部分复制到条件张量（conds）中，创建一个"部分已知"的条件，模型需要基于这个部分信息来生成剩余的部分；这种渐进式生成策略，模型学习如何基于部分已知的mel谱图来预测和生成后续内容
             conds[i, :index] = feat[i, :index]
         conds = conds.transpose(1, 2)
 
         mask = (~make_pad_mask(feat_len)).to(h)
-        feat = F.interpolate(feat.unsqueeze(dim=1), size=h.shape[1:], mode="nearest").squeeze(dim=1)
+        feat = F.interpolate(feat.unsqueeze(dim=1), size=h.shape[1:], mode="nearest").squeeze(dim=1)  # 将输入的mel谱图特征进行插值，调整mel谱图序列长度与h一致
         loss, _ = self.decoder.compute_loss(
             feat.transpose(1, 2).contiguous(),
             mask.unsqueeze(1),

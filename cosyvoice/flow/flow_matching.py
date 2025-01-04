@@ -166,18 +166,18 @@ class ConditionalCFM(BASECFM):
         # sample noise p(x_0)
         z = torch.randn_like(x1)
 
-        y = (1 - (1 - self.sigma_min) * t) * z + t * x1
-        u = x1 - (1 - self.sigma_min) * z
+        y = (1 - (1 - self.sigma_min) * t) * z + t * x1  # 此时的y对应于flow matching中的x_t
+        u = x1 - (1 - self.sigma_min) * z  # flow matching中的目标向量场
 
-        # during training, we randomly drop condition to trade off mode coverage and sample fidelity
+        # during training, we randomly drop condition to trade off mode coverage and sample fidelity; 在训练过程中，我们随机丢弃条件以权衡模式覆盖率和样本保真度
         if self.training_cfg_rate > 0:
-            cfg_mask = torch.rand(b, device=x1.device) > self.training_cfg_rate
-            mu = mu * cfg_mask.view(-1, 1, 1)
-            spks = spks * cfg_mask.view(-1, 1)
-            cond = cond * cfg_mask.view(-1, 1, 1)
+            cfg_mask = torch.rand(b, device=x1.device) > self.training_cfg_rate  # 随机生成一个mask，用于控制条件注入的概率
+            mu = mu * cfg_mask.view(-1, 1, 1)  # 将mu乘以cfg_mask，使得在训练过程中随机丢弃条件
+            spks = spks * cfg_mask.view(-1, 1)  # 将spks乘以cfg_mask，使得在训练过程中随机丢弃条件
+            cond = cond * cfg_mask.view(-1, 1, 1)  # 将cond乘以cfg_mask，使得在训练过程中随机丢弃条件
 
-        pred = self.estimator(y, mask, mu, t.squeeze(), spks, cond)
-        loss = F.mse_loss(pred * mask, u * mask, reduction="sum") / (torch.sum(mask) * u.shape[1])
+        pred = self.estimator(y, mask, mu, t.squeeze(), spks, cond)  # 预测的向量场
+        loss = F.mse_loss(pred * mask, u * mask, reduction="sum") / (torch.sum(mask) * u.shape[1])  # flow matching的损失函数
         return loss, y
 
 
