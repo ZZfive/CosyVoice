@@ -265,39 +265,39 @@ class UpsampleConformerEncoder(torch.nn.Module):
             https://discuss.pytorch.org/t/any-different-between-model-input-and-model-forward-input/3690/2
         """
         T = xs.size(1)
-        masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
+        masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)，如[1, 1, 55]
         if self.global_cmvn is not None:
             xs = self.global_cmvn(xs)
-        xs, pos_emb, masks = self.embed(xs, masks)
-        mask_pad = masks  # (B, 1, T/subsample_rate)
+        xs, pos_emb, masks = self.embed(xs, masks)  # 如[1, 55, 512]
+        mask_pad = masks  # (B, 1, T/subsample_rate)，如[1, 1, 55]
         chunk_masks = add_optional_chunk_mask(xs, masks,
                                               self.use_dynamic_chunk,
                                               self.use_dynamic_left_chunk,
                                               decoding_chunk_size,
                                               self.static_chunk_size,
-                                              num_decoding_left_chunks)
+                                              num_decoding_left_chunks)  # 如[1, 55, 55]
         # lookahead + conformer encoder
-        xs = self.pre_lookahead_layer(xs)
-        xs = self.forward_layers(xs, chunk_masks, pos_emb, mask_pad)
+        xs = self.pre_lookahead_layer(xs)  # 如[1, 55, 512]
+        xs = self.forward_layers(xs, chunk_masks, pos_emb, mask_pad)  # 如[1, 55, 512]
 
         # upsample + conformer encoder
-        xs = xs.transpose(1, 2).contiguous()
-        xs, xs_lens = self.up_layer(xs, xs_lens)
-        xs = xs.transpose(1, 2).contiguous()
+        xs = xs.transpose(1, 2).contiguous()  # 如[1, 512, 55]
+        xs, xs_lens = self.up_layer(xs, xs_lens)  # 如[1, 512, 110]
+        xs = xs.transpose(1, 2).contiguous()  # 如[1, 110, 512]
         T = xs.size(1)
-        masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
-        xs, pos_emb, masks = self.up_embed(xs, masks)
-        mask_pad = masks  # (B, 1, T/subsample_rate)
+        masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)，如[1, 1, 110]
+        xs, pos_emb, masks = self.up_embed(xs, masks)  # 如[1, 110, 512]
+        mask_pad = masks  # (B, 1, T/subsample_rate)，如[1, 1, 110]
         chunk_masks = add_optional_chunk_mask(xs, masks,
                                               self.use_dynamic_chunk,
                                               self.use_dynamic_left_chunk,
                                               decoding_chunk_size,
                                               self.static_chunk_size * self.up_layer.stride,
-                                              num_decoding_left_chunks)
-        xs = self.forward_up_layers(xs, chunk_masks, pos_emb, mask_pad)
+                                              num_decoding_left_chunks)  # 如[1, 110, 110]
+        xs = self.forward_up_layers(xs, chunk_masks, pos_emb, mask_pad)  # 如[1, 110, 512]
 
         if self.normalize_before:
-            xs = self.after_norm(xs)
+            xs = self.after_norm(xs)  # 如[1, 110, 512]
         # Here we assume the mask is not changed in encoder layers, so just
         # return the masks before encoder layers, and the masks will be used
         # for cross attention with decoder later

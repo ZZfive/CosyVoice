@@ -165,12 +165,13 @@ def set_all_random_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 
+# 将布尔类型的掩码转换为注意力机制中使用的偏置值；对于需要被忽略的位置（原始mask为False），将其设置为该数据类型的最小值
 def mask_to_bias(mask: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
     assert mask.dtype == torch.bool
     assert dtype in [torch.float32, torch.bfloat16, torch.float16]
-    mask = mask.to(dtype)
+    mask = mask.to(dtype)  # 将布尔mask转换为浮点类型
     # attention mask bias
     # NOTE(Mddct): torch.finfo jit issues
     #     chunk_masks = (1.0 - chunk_masks) * torch.finfo(dtype).min
-    mask = (1.0 - mask) * torch.finfo(dtype).min
+    mask = (1.0 - mask) * torch.finfo(dtype).min  # 将mask取反，并乘以最小浮点值，以实现注意力掩码的效果
     return mask

@@ -73,55 +73,56 @@ class ConditionalCFM(BASECFM):
             x (torch.Tensor): random noise
             t_span (torch.Tensor): n_timesteps interpolated
                 shape: (n_timesteps + 1,)
-            mu (torch.Tensor): output of encoder
+            mu (torch.Tensor): output of encoder；speech tokens经过encoder编码后的输出
                 shape: (batch_size, n_feats, mel_timesteps)
             mask (torch.Tensor): output_mask
                 shape: (batch_size, 1, mel_timesteps)
             spks (torch.Tensor, optional): speaker ids. Defaults to None.
                 shape: (batch_size, spk_emb_dim)
-            cond: Not used but kept for future purposes
+            cond: Not used but kept for future purposes；参考音频的mel谱图特征
         """
         t, _, dt = t_span[0], t_span[-1], t_span[1] - t_span[0]
-        t = t.unsqueeze(dim=0)
+        t = t.unsqueeze(dim=0)  # 如[1]
 
         # I am storing this because I can later plot it by putting a debugger here and saving it to a file
         # Or in future might add like a return_all_steps flag
         sol = []
 
         # Do not use concat, it may cause memory format changed and trt infer with wrong results!
-        x_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)
-        mask_in = torch.zeros([2, 1, x.size(2)], device=x.device, dtype=x.dtype)
-        mu_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)
-        t_in = torch.zeros([2], device=x.device, dtype=x.dtype)
-        spks_in = torch.zeros([2, 80], device=x.device, dtype=x.dtype)
-        cond_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)
+        # 此处所有输入都翻倍的原因是同时进行有条件和无条件预测
+        x_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)  # 如[2, 80, 110]
+        mask_in = torch.zeros([2, 1, x.size(2)], device=x.device, dtype=x.dtype)  # 如[2, 1, 110]
+        mu_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)  # 如[2, 80, 110]
+        t_in = torch.zeros([2], device=x.device, dtype=x.dtype)  # 如[2]
+        spks_in = torch.zeros([2, 80], device=x.device, dtype=x.dtype)  # 如[2, 80]
+        cond_in = torch.zeros([2, 80, x.size(2)], device=x.device, dtype=x.dtype)  # 如[2, 80, 110]
         for step in range(1, len(t_span)):
             # Classifier-Free Guidance inference introduced in VoiceBox
-            x_in[:] = x
-            mask_in[:] = mask
-            mu_in[0] = mu
-            t_in[:] = t.unsqueeze(0)
-            spks_in[0] = spks
-            cond_in[0] = cond
+            x_in[:] = x  # 将x复制到x_in中，会将x重复两次
+            mask_in[:] = mask  # 将mask复制到mask_in中，会将mask重复两次
+            mu_in[0] = mu  # 将mu复制到mu_in中
+            t_in[:] = t.unsqueeze(0)  # 将t复制到t_in中，会将t重复两次
+            spks_in[0] = spks  # 将spks复制到spks_in中
+            cond_in[0] = cond  # 将cond复制到cond_in中
             dphi_dt = self.forward_estimator(
                 x_in, mask_in,
                 mu_in, t_in,
                 spks_in,
                 cond_in
-            )
-            dphi_dt, cfg_dphi_dt = torch.split(dphi_dt, [x.size(0), x.size(0)], dim=0)
-            dphi_dt = ((1.0 + self.inference_cfg_rate) * dphi_dt - self.inference_cfg_rate * cfg_dphi_dt)
-            x = x + dt * dphi_dt
-            t = t + dt
+            )  # 如[2, 80, 110]
+            dphi_dt, cfg_dphi_dt = torch.split(dphi_dt, [x.size(0), x.size(0)], dim=0)  # 将dphi_dt拆分为两个部分，分别对应有条件和无条件预测，shape均如[1, 80, 110]
+            dphi_dt = ((1.0 + self.inference_cfg_rate) * dphi_dt - self.inference_cfg_rate * cfg_dphi_dt)  # 如[1, 80, 110]
+            x = x + dt * dphi_dt  # 基于OT-CFM的欧拉法更新x，如[1, 80, 110]
+            t = t + dt  # 更新时间步
             sol.append(x)
             if step < len(t_span) - 1:
                 dt = t_span[step + 1] - t
 
-        return sol[-1].float()
+        return sol[-1].float()  # 返回最终的x，shape如[1, 80, 110]
 
     def forward_estimator(self, x, mask, mu, t, spks, cond):
         if isinstance(self.estimator, torch.nn.Module):
-            return self.estimator.forward(x, mask, mu, t, spks, cond)
+            return self.estimator.forward(x, mask, mu, t, spks, cond)  # 如[1, 80, 110]
         else:
             self.estimator.set_input_shape('x', (2, 80, x.size(2)))
             self.estimator.set_input_shape('mask', (2, 1, x.size(2)))
@@ -184,7 +185,7 @@ class ConditionalCFM(BASECFM):
 class CausalConditionalCFM(ConditionalCFM):
     def __init__(self, in_channels, cfm_params, n_spks=1, spk_emb_dim=64, estimator: torch.nn.Module = None):
         super().__init__(in_channels, cfm_params, n_spks, spk_emb_dim, estimator)
-        self.rand_noise = torch.randn([1, 80, 50 * 300])
+        self.rand_noise = torch.randn([1, 80, 50 * 300])  # 初始化时就随机生成一个固定噪声，shape为[1, 80, 15000]
 
     @torch.inference_mode()
     def forward(self, mu, mask, n_timesteps, temperature=1.0, spks=None, cond=None):
@@ -206,7 +207,7 @@ class CausalConditionalCFM(ConditionalCFM):
                 shape: (batch_size, n_feats, mel_timesteps)
         """
 
-        z = self.rand_noise[:, :, :mu.size(2)].to(mu.device).to(mu.dtype) * temperature
+        z = self.rand_noise[:, :, :mu.size(2)].to(mu.device).to(mu.dtype) * temperature  # 以mu的长度从固定噪声中截取推理时要使用的噪声，如[1, 80, 110]
         # fix prompt and overlap part mu and z
         t_span = torch.linspace(0, 1, n_timesteps + 1, device=mu.device, dtype=mu.dtype)
         if self.t_scheduler == 'cosine':

@@ -209,34 +209,34 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
 
         assert token.shape[0] == 1
         # xvec projection
-        embedding = F.normalize(embedding, dim=1)
-        embedding = self.spk_embed_affine_layer(embedding)
+        embedding = F.normalize(embedding, dim=1)  # 对输入的说话人embedding特征进行归一化，[1, 192]
+        embedding = self.spk_embed_affine_layer(embedding)  # 将归一化后的说话人embedding特征映射到80维，[1, 80]
 
         # concat text and prompt_text
-        token, token_len = torch.concat([prompt_token, token], dim=1), prompt_token_len + token_len
-        mask = (~make_pad_mask(token_len)).unsqueeze(-1).to(embedding)
-        token = self.input_embedding(torch.clamp(token, min=0)) * mask
+        token, token_len = torch.concat([prompt_token, token], dim=1), prompt_token_len + token_len  # 将参考音频speech tokens和预测的speech tokens拼接，[1, 55]
+        mask = (~make_pad_mask(token_len)).unsqueeze(-1).to(embedding)  # [1, 55, 1]
+        token = self.input_embedding(torch.clamp(token, min=0)) * mask  # [1, 55, 512]
 
         # text encode
-        h, h_lengths = self.encoder(token, token_len)
+        h, h_lengths = self.encoder(token, token_len)  # 如[1, 110, 512]；对speech tokens进行编码
         if finalize is False:
             h = h[:, :-self.pre_lookahead_len * self.token_mel_ratio]
         mel_len1, mel_len2 = prompt_feat.shape[1], h.shape[1] - prompt_feat.shape[1]
-        h = self.encoder_proj(h)
+        h = self.encoder_proj(h)  # 如[1, 110, 80]
 
         # get conditions
-        conds = torch.zeros([1, mel_len1 + mel_len2, self.output_size], device=token.device).to(h.dtype)
-        conds[:, :mel_len1] = prompt_feat
-        conds = conds.transpose(1, 2)
+        conds = torch.zeros([1, mel_len1 + mel_len2, self.output_size], device=token.device).to(h.dtype)  # 如[1, 110, 80]
+        conds[:, :mel_len1] = prompt_feat  # 将参考音频的mel谱图特征复制到conds中
+        conds = conds.transpose(1, 2)  # 如[1, 80, 110]
 
-        mask = (~make_pad_mask(torch.tensor([mel_len1 + mel_len2]))).to(h)
+        mask = (~make_pad_mask(torch.tensor([mel_len1 + mel_len2]))).to(h)  # 如[1, 110]
         feat, _ = self.decoder(
-            mu=h.transpose(1, 2).contiguous(),
-            mask=mask.unsqueeze(1),
-            spks=embedding,
-            cond=conds,
-            n_timesteps=10
-        )
-        feat = feat[:, :, mel_len1:]
+            mu=h.transpose(1, 2).contiguous(),  # 如[1, 80, 110]
+            mask=mask.unsqueeze(1),  # 如[1, 1, 110]
+            spks=embedding,  # 如[1, 80]
+            cond=conds,  # 如[1, 80, 110]
+            n_timesteps=10  # 采样步数
+        )  # 如[1, 80, 110]
+        feat = feat[:, :, mel_len1:]  # 如[1, 80, 40]
         assert feat.shape[2] == mel_len2
         return feat.float(), None

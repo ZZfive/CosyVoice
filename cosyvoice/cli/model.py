@@ -110,7 +110,7 @@ class CosyVoiceModel:
                                                   prompt_feat=prompt_feat.to(self.device),
                                                   prompt_feat_len=torch.tensor([prompt_feat.shape[1]], dtype=torch.int32).to(self.device),
                                                   embedding=embedding.to(self.device),
-                                                  flow_cache=self.flow_cache_dict[uuid])
+                                                  flow_cache=self.flow_cache_dict[uuid])  # tts_mel如[1, 80, 40]
         self.flow_cache_dict[uuid] = flow_cache
 
         # mel overlap fade in out
@@ -136,11 +136,11 @@ class CosyVoiceModel:
         else:
             if speed != 1.0:
                 assert self.hift_cache_dict[uuid] is None, 'speed change only support non-stream inference mode'
-                tts_mel = F.interpolate(tts_mel, size=int(tts_mel.shape[2] / speed), mode='linear')
+                tts_mel = F.interpolate(tts_mel, size=int(tts_mel.shape[2] / speed), mode='linear')  # 基于speed对tts_mel进行插值，实现速度的控制
             tts_speech, tts_source = self.hift.inference(speech_feat=tts_mel, cache_source=hift_cache_source)
             if self.hift_cache_dict[uuid] is not None:
                 tts_speech = fade_in_out(tts_speech, self.hift_cache_dict[uuid]['speech'], self.speech_window)
-        return tts_speech
+        return tts_speech  # 如[1, 19200]
 
     def tts(self, text, flow_embedding, llm_embedding=torch.zeros(0, 192),
             prompt_text=torch.zeros(1, 0, dtype=torch.int32),
@@ -374,10 +374,10 @@ class CosyVoice2Model(CosyVoiceModel):
             # deal with all tokens
             p.join()
             this_tts_speech_token = torch.tensor(self.tts_speech_token_dict[this_uuid]).unsqueeze(dim=0)
-            this_tts_speech = self.token2wav(token=this_tts_speech_token,
-                                             prompt_token=flow_prompt_speech_token,
-                                             prompt_feat=prompt_speech_feat,
-                                             embedding=flow_embedding,
+            this_tts_speech = self.token2wav(token=this_tts_speech_token,  # 预测的spech tokens ids序列
+                                             prompt_token=flow_prompt_speech_token,  #  参考音频抽取的spech tokens ids序列
+                                             prompt_feat=prompt_speech_feat,  # 从参考音频中抽取的mel谱图特征
+                                             embedding=flow_embedding,  #  参考音频抽取的说话人embedding
                                              uuid=this_uuid,
                                              token_offset=0,
                                              finalize=True,
