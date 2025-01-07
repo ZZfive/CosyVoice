@@ -182,7 +182,7 @@ class TransformerLM(torch.nn.Module):
         text = self.text_embedding(text)
 
         # 1. encode text
-        text, text_len = self.encode(text, text_len)   # 使用text encoder将文本ids序列转换为文本特征，[batch_size, seq_len, llm_input_size]
+        text, text_len = self.encode(text, text_len)   # 使用text encoder进行文本特征编码，[batch_size, seq_len, llm_input_size]
 
         # 2. encode embedding
         if embedding.shape[0] != 0:  # 此处的embedding是说话人embedding特征
@@ -225,7 +225,7 @@ class TransformerLM(torch.nn.Module):
             yield top_ids  # 用于流式输出
             out_tokens.append(top_ids)  # 用于下一次id的采样
             offset += lm_input.size(1)
-            lm_input = self.speech_embedding.weight[top_ids].reshape(1, 1, -1)  # 非第一预测时，后续的token输出的输入是上一次预测的输出；因为此处top_ids起始就是一个id，直接通过索引获取对应向量更方便
+            lm_input = self.speech_embedding.weight[top_ids].reshape(1, 1, -1)  # 非第一次预测时，后续的token预测的输入是上一次预测的输出；因为此处top_ids起始就是一个id，直接通过索引获取对应向量更方便
 
 
 class Qwen2Encoder(torch.nn.Module):
@@ -234,17 +234,17 @@ class Qwen2Encoder(torch.nn.Module):
         self.model = Qwen2ForCausalLM.from_pretrained(pretrain_path)
 
     def forward_one_step(self, xs, masks, cache=None):
-        input_masks = masks[:, -1, :]
+        input_masks = masks[:, -1, :]  # 只取最后一个时间步的注意力掩码，shape从[1, seq_len, seq_len]变为[1, seq_len]，如[1, 45, 45]->[1, 45]；Qwen2ForCausalLM内部会重新构建有效的causal mask
         outs = self.model(
             inputs_embeds=xs,
             attention_mask=input_masks,
-            output_hidden_states=True,
-            return_dict=True,
-            use_cache=True,
+            output_hidden_states=True,  # 输出所有层的隐藏状态
+            return_dict=True,  # 以字典形式返回结果
+            use_cache=True,  # 启用KV缓存
             past_key_values=cache,
         )
-        xs = outs.hidden_states[-1]
-        new_cache = outs.past_key_values
+        xs = outs.hidden_states[-1]  # 提取最后一层的隐藏状态，shape如[1, 45, 896]
+        new_cache = outs.past_key_values  # 更新KV缓存，记录的是上一次计算后Qwen2ForCausalLM模型每一层的K和V
         return xs, new_cache
 
 
@@ -270,7 +270,7 @@ class Qwen2LM(torch.nn.Module):
         self.fill_token = 2
 
         self.llm_embedding = torch.nn.Embedding(2, llm_input_size)
-        self.llm = llm
+        self.llm = llm  # 一个上述的Qwen2Encoder对象
         self.llm_decoder = nn.Linear(llm_output_size, speech_token_size + 3)
         self.criterion_ce = LabelSmoothingLoss(
             size=speech_token_size + 3,
@@ -295,6 +295,9 @@ class Qwen2LM(torch.nn.Module):
         num_trials, max_trials = 0, 100
         while True:
             top_ids = self.sampling(weighted_scores, decoded_tokens, sampling)
+            # 在前min_len个token预测时，只有当预测的top_ids不是speech_token_size才会跳出循环，如果每次采样的top_ids都是speech_token_size，可能进入死循环，故使用max_trials避免死循环出现
+            # 这样设置的目的是让预测的前min_len个token不会是eos，避免出现预测的tokens数太少就结束了推理
+            # 在预测的tokens数量超过max_len后，ignore_eos为False，采样时循环只会执行一次后直接跳出
             if (not ignore_eos) or (self.speech_token_size not in top_ids):
                 break
             num_trials += 1
@@ -317,40 +320,40 @@ class Qwen2LM(torch.nn.Module):
             min_token_text_ratio: float = 2,
     ) -> Generator[torch.Tensor, None, None]:
         device = text.device
-        text = torch.concat([prompt_text, text], dim=1)
+        text = torch.concat([prompt_text, text], dim=1)  # 参考音频对应的文本prompt_text和输入目标文本text拼接
         text_len += prompt_text_len
-        text = self.llm.model.model.embed_tokens(text)
+        text = self.llm.model.model.embed_tokens(text)  # 用Qwen2Encoder对象中的embedding层进行文本特征，[1, seq_len, llm_input_size]，如[1, 8, 896]
 
         # 2. encode embedding
-        embedding = torch.zeros(1, 0, self.llm_input_size, dtype=text.dtype).to(device).to(text.dtype)
+        embedding = torch.zeros(1, 0, self.llm_input_size, dtype=text.dtype).to(device).to(text.dtype)  # [1, 0, 896]；与cosyvoice中不同，cosyvoice2在speech tokens预测时不使用说话人embedding
 
         # 3. concat llm_input
-        sos_eos_emb = self.llm_embedding.weight[self.sos_eos].reshape(1, 1, -1)
-        task_id_emb = self.llm_embedding.weight[self.task_id].reshape(1, 1, -1)
-        if prompt_speech_token_len != 0:
-            prompt_speech_token_emb = self.speech_embedding(prompt_speech_token)
+        sos_eos_emb = self.llm_embedding.weight[self.sos_eos].reshape(1, 1, -1)  # [1, 1, 896]
+        task_id_emb = self.llm_embedding.weight[self.task_id].reshape(1, 1, -1)  # [1, 1, 896]
+        if prompt_speech_token_len != 0:  # 如果存在参考音频的speech tokens对齐进行编码
+            prompt_speech_token_emb = self.speech_embedding(prompt_speech_token)  # 如[1, 35, 896]
         else:
-            prompt_speech_token_emb = torch.zeros(1, 0, self.llm_input_size, dtype=text.dtype).to(device)
-        lm_input = torch.concat([sos_eos_emb, embedding, text, task_id_emb, prompt_speech_token_emb], dim=1)
+            prompt_speech_token_emb = torch.zeros(1, 0, self.llm_input_size, dtype=text.dtype).to(device)  # [1, 0, 896]
+        lm_input = torch.concat([sos_eos_emb, embedding, text, task_id_emb, prompt_speech_token_emb], dim=1)  # 如[1, 45, 896]；将sos_eos_emb、embedding、text、task_id_emb、prompt_speech_token_emb拼接在一起，得到lm_input
 
         # 4. cal min/max_length
-        min_len = int((text_len - prompt_text_len) * min_token_text_ratio)
-        max_len = int((text_len - prompt_text_len) * max_token_text_ratio)
+        min_len = int((text_len - prompt_text_len) * min_token_text_ratio)  # 基于参考音频文本长度和待生成文本长度计算单次推理最小预测长度
+        max_len = int((text_len - prompt_text_len) * max_token_text_ratio)  # 基于参考音频文本长度和待生成文本长度计算单次推理最大预测长度
 
         # 5. step by step decode
         out_tokens = []
         cache = None
         for i in range(max_len):
             y_pred, cache = self.llm.forward_one_step(lm_input,
-                                                      masks=torch.tril(torch.ones((1, lm_input.shape[1], lm_input.shape[1]), device=lm_input.device)).to(torch.bool),
-                                                      cache=cache)
-            logp = self.llm_decoder(y_pred[:, -1]).log_softmax(dim=-1)
+                                                      masks=torch.tril(torch.ones((1, lm_input.shape[1], lm_input.shape[1]), device=lm_input.device)).to(torch.bool),  # 一个下三角矩阵，使当前位置数值只与自己和前面的数值进行注意力计算
+                                                      cache=cache)  # y_pred的shape未变，如[1, 45, 896]
+            logp = self.llm_decoder(y_pred[:, -1]).log_softmax(dim=-1)  # [1, 6564]
             top_ids = self.sampling_ids(logp.squeeze(dim=0), out_tokens, sampling, ignore_eos=True if i < min_len else False).item()
-            if top_ids == self.speech_token_size:
+            if top_ids == self.speech_token_size:  # 如果采样到的token id是self.speech_token_size，则停止采样
                 break
-            if top_ids > self.speech_token_size:
+            if top_ids > self.speech_token_size:  # 如果采样到的token id大于self.speech_token_size，则跳过不输出
                 continue
             # in stream mode, yield token one by one
             yield top_ids
             out_tokens.append(top_ids)
-            lm_input = self.speech_embedding.weight[top_ids].reshape(1, 1, -1)
+            lm_input = self.speech_embedding.weight[top_ids].reshape(1, 1, -1)  # 非第一次预测时，后续的token预测的输入是上一次预测的输出；因为此处top_ids起始就是一个id，直接通过索引获取对应向量更方便

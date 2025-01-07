@@ -130,15 +130,15 @@ class CosyVoice2(CosyVoice):
         if not os.path.exists(model_dir):
             model_dir = snapshot_download(model_dir)
         with open('{}/cosyvoice.yaml'.format(model_dir), 'r') as f:
-            configs = load_hyperpyyaml(f, overrides={'qwen_pretrain_path': os.path.join(model_dir, 'CosyVoice-BlankEN')})
+            configs = load_hyperpyyaml(f, overrides={'qwen_pretrain_path': os.path.join(model_dir, 'CosyVoice-BlankEN')})  # 加载配置文件，覆盖qwen_pretrain_path
         assert get_model_type(configs) == CosyVoice2Model, 'do not use {} for CosyVoice2 initialization!'.format(model_dir)
-        self.frontend = CosyVoiceFrontEnd(configs['get_tokenizer'],
-                                          configs['feat_extractor'],
-                                          '{}/campplus.onnx'.format(model_dir),
-                                          '{}/speech_tokenizer_v2.onnx'.format(model_dir),
-                                          '{}/spk2info.pt'.format(model_dir),
+        self.frontend = CosyVoiceFrontEnd(configs['get_tokenizer'],  # 文本分词器，Qwen2Tokenizer
+                                          configs['feat_extractor'],  # 音频mel谱图提取器
+                                          '{}/campplus.onnx'.format(model_dir),  # campplus模型，是一个说话人特征提取模型
+                                          '{}/speech_tokenizer_v2.onnx'.format(model_dir),  # 语音分词器tokenizer，将语音信号离散为token ids序列
+                                          '{}/spk2info.pt'.format(model_dir),  # 预先提取的说话人embedding
                                           configs['allowed_special'])
-        self.sample_rate = configs['sample_rate']
+        self.sample_rate = configs['sample_rate']  # cosyvoice2模型计算时的采样率，影响结果
         if torch.cuda.is_available() is False and (load_jit is True or load_trt is True or fp16 is True):
             load_jit, load_trt, fp16 = False, False, False
             logging.warning('no cuda device, set load_jit/load_trt/fp16 to False')

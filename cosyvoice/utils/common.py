@@ -110,20 +110,26 @@ def init_weights(m, mean=0.0, std=0.01):
 
 # Repetition Aware Sampling in VALL-E 2
 def ras_sampling(weighted_scores, decoded_tokens, sampling, top_p=0.8, top_k=25, win_size=10, tau_r=0.1):
-    top_ids = nucleus_sampling(weighted_scores, top_p=top_p, top_k=top_k)
-    rep_num = (torch.tensor(decoded_tokens[-win_size:]).to(weighted_scores.device) == top_ids).sum().item()
-    if rep_num >= win_size * tau_r:
+    top_ids = nucleus_sampling(weighted_scores, top_p=top_p, top_k=top_k)  # 使用核采样策略从概率分布中采样下一个token id
+    rep_num = (torch.tensor(decoded_tokens[-win_size:]).to(weighted_scores.device) == top_ids).sum().item()  # 计算最近win_size个token中重复出现的次数
+    if rep_num >= win_size * tau_r:  # 如果重复次数超过阈值，则进行随机采样
         top_ids = random_sampling(weighted_scores, decoded_tokens, sampling)
     return top_ids
 
 
+# 核采样，或top-p采样
 def nucleus_sampling(weighted_scores, top_p=0.8, top_k=25):
+    '''
+    weighted_scores: 模型输出的logits分数，形状为 [vocab_size]
+    top_p: 概率阈值，默认0.8，表示采样概率总和的截断阈值
+    top_k: 最大保留的token数量，默认25
+    '''
     prob, indices = [], []
     cum_prob = 0.0
-    sorted_value, sorted_idx = weighted_scores.softmax(dim=0).sort(descending=True, stable=True)
+    sorted_value, sorted_idx = weighted_scores.softmax(dim=0).sort(descending=True, stable=True)  # 对概率分布进行排序，返回排序后的概率值和对应的索引
     for i in range(len(sorted_idx)):
         # sampling both top-p and numbers.
-        if cum_prob < top_p and len(prob) < top_k:
+        if cum_prob < top_p and len(prob) < top_k:  # 如果累积概率小于top_p且保留的token数量小于top_k，则将当前token的概率和索引添加到列表中
             cum_prob += sorted_value[i]
             prob.append(sorted_value[i])
             indices.append(sorted_idx[i])
@@ -131,12 +137,13 @@ def nucleus_sampling(weighted_scores, top_p=0.8, top_k=25):
             break
     prob = torch.tensor(prob).to(weighted_scores)
     indices = torch.tensor(indices, dtype=torch.long).to(weighted_scores.device)
-    top_ids = indices[prob.multinomial(1, replacement=True)]
+    top_ids = indices[prob.multinomial(1, replacement=True)]  # 使用multinomial进行随机采样，replacement=True表示有放回采样
     return top_ids
 
 
+# 基于概率分布的随机采样，不是均匀采样
 def random_sampling(weighted_scores, decoded_tokens, sampling):
-    top_ids = weighted_scores.softmax(dim=0).multinomial(1, replacement=True)
+    top_ids = weighted_scores.softmax(dim=0).multinomial(1, replacement=True)  # 使用softmax后的概率分布进行随机采样，replacement=True表示有放回采样
     return top_ids
 
 
