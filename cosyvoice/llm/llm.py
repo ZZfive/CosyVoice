@@ -236,7 +236,7 @@ class Qwen2Encoder(torch.nn.Module):
     def forward_one_step(self, xs, masks, cache=None):
         input_masks = masks[:, -1, :]  # 只取最后一个时间步的注意力掩码，shape从[1, seq_len, seq_len]变为[1, seq_len]，如[1, 45, 45]->[1, 45]；Qwen2ForCausalLM内部会重新构建有效的causal mask
         outs = self.model(
-            inputs_embeds=xs,
+            inputs_embeds=xs,  # 此处xs就是构建的lm_input，其中包含了sos_eos_emb、embedding、text tokens、task_id_emb、prompt speech tokens，不是单纯的text tokens，并且已转换为嵌入向量；将其传给inputs_embeds，在内部不会再调用Qwen2Model的embed_tokens层进行embedding操作
             attention_mask=input_masks,
             output_hidden_states=True,  # 输出所有层的隐藏状态
             return_dict=True,  # 以字典形式返回结果
@@ -247,7 +247,45 @@ class Qwen2Encoder(torch.nn.Module):
         new_cache = outs.past_key_values  # 更新KV缓存，记录的是上一次计算后Qwen2ForCausalLM模型每一层的K和V
         return xs, new_cache
 
-
+'''
+结构图：
+Qwen2LM(
+  (llm_embedding): Embedding(2, 896)
+  (llm): Qwen2Encoder(
+    (model): Qwen2ForCausalLM(
+      (model): Qwen2Model(
+        (embed_tokens): Embedding(151936, 896)
+        (layers): ModuleList(
+          (0-23): 24 x Qwen2DecoderLayer(
+            (self_attn): Qwen2Attention(
+              (q_proj): Linear(in_features=896, out_features=896, bias=True)
+              (k_proj): Linear(in_features=896, out_features=128, bias=True)
+              (v_proj): Linear(in_features=896, out_features=128, bias=True)
+              (o_proj): Linear(in_features=896, out_features=896, bias=False)
+              (rotary_emb): Qwen2RotaryEmbedding()
+            )
+            (mlp): Qwen2MLP(
+              (gate_proj): Linear(in_features=896, out_features=4864, bias=False)
+              (up_proj): Linear(in_features=896, out_features=4864, bias=False)
+              (down_proj): Linear(in_features=4864, out_features=896, bias=False)
+              (act_fn): SiLU()
+            )
+            (input_layernorm): Qwen2RMSNorm((896,), eps=1e-06)
+            (post_attention_layernorm): Qwen2RMSNorm((896,), eps=1e-06)
+          )
+        )
+        (norm): Qwen2RMSNorm((896,), eps=1e-06)
+      )
+      (lm_head): Linear(in_features=896, out_features=151936, bias=False)
+    )
+  )
+  (llm_decoder): Linear(in_features=896, out_features=6564, bias=True)
+  (criterion_ce): LabelSmoothingLoss(
+    (criterion): KLDivLoss()
+  )
+  (speech_embedding): Embedding(6564, 896)
+)
+'''
 class Qwen2LM(torch.nn.Module):
     def __init__(
             self,

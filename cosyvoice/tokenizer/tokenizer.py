@@ -166,15 +166,15 @@ TTS_Vocal_Token = {
 }
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=None)  # 缓存编码器，避免重复创建
 def get_encoding(name: str = "gpt2", num_languages: int = 99):
-    vocab_path = os.path.join(os.path.dirname(__file__), "assets", f"{name}.tiktoken")
+    vocab_path = os.path.join(os.path.dirname(__file__), "assets", f"{name}.tiktoken")  # vocab路径
     ranks = {
         base64.b64decode(token): int(rank)
         for token, rank in (line.split() for line in open(vocab_path) if line)
-    }
-    n_vocab = len(ranks)
-    special_tokens = {}
+    }  # 将vocab文件中的token和rank映射关系读取到ranks字典中，会使用base64解码token
+    n_vocab = len(ranks)  # 词汇表大小
+    special_tokens = {}  # 特殊token字典
 
     specials = [
         "<|endoftext|>",
@@ -190,31 +190,31 @@ def get_encoding(name: str = "gpt2", num_languages: int = 99):
         "<|notimestamps|>",
         *[f"<|SPECIAL_TOKEN_{i}|>" for i in range(1, 31)],        # register special tokens for ASR
         *[f"<|{tts}|>" for tts in list(TTS_Vocal_Token.keys())],  # register special tokens for TTS
-        *[f"<|{i * 0.02:.2f}|>" for i in range(1501)],
+        *[f"<|{i * 0.02:.2f}|>" for i in range(1501)],  # 注册时间戳token，0.02间隔，最多30s
     ]
 
-    for token in specials:
+    for token in specials:  # 注册特殊token
         special_tokens[token] = n_vocab
         n_vocab += 1
 
     return tiktoken.Encoding(
         name=os.path.basename(vocab_path),
         explicit_n_vocab=n_vocab,
-        pat_str=r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""",
+        pat_str=r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""",  # 正则表达式，用于匹配单词边界
         mergeable_ranks=ranks,
         special_tokens=special_tokens,
-    )
+    )  # 创建tiktoken编码器
 
 
 @lru_cache(maxsize=None)
 def get_tokenizer(
-    multilingual: bool,
+    multilingual: bool,  # 是否是多语言
     *,
-    num_languages: int = 99,
+    num_languages: int = 99,  # 支持语言数量
     language: Optional[str] = None,
     task: Optional[str] = None,  # Literal["transcribe", "translate", None]
 ) -> Tokenizer:
-    if language is not None:
+    if language is not None:  # 语言校验
         language = language.lower()
         if language not in LANGUAGES:
             if language in TO_LANGUAGE_CODE:
