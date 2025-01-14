@@ -111,7 +111,7 @@ class ConditionalCFM(BASECFM):
                 cond_in
             )  # 如[2, 80, 110]
             dphi_dt, cfg_dphi_dt = torch.split(dphi_dt, [x.size(0), x.size(0)], dim=0)  # 将dphi_dt拆分为两个部分，分别对应有条件和无条件预测，shape均如[1, 80, 110]
-            dphi_dt = ((1.0 + self.inference_cfg_rate) * dphi_dt - self.inference_cfg_rate * cfg_dphi_dt)  # 如[1, 80, 110]
+            dphi_dt = ((1.0 + self.inference_cfg_rate) * dphi_dt - self.inference_cfg_rate * cfg_dphi_dt)  # 如[1, 80, 110]；cfg训练综合考虑有条件和无条件预测得到最终预测的向量场
             x = x + dt * dphi_dt  # 基于OT-CFM的欧拉法更新x，如[1, 80, 110]
             t = t + dt  # 更新时间步
             sol.append(x)

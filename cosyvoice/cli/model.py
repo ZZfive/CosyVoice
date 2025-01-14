@@ -273,7 +273,7 @@ class CosyVoice2Model(CosyVoiceModel):
         self.fp16 = fp16
         self.llm.fp16 = fp16
         self.flow.fp16 = fp16
-        self.token_hop_len = 2 * self.flow.input_frame_rate
+        self.token_hop_len = 2 * self.flow.input_frame_rate  # 可以理解为单次speech tokens预测所需的最小tokens数
         # here we fix flow encoder/decoder decoding_chunk_size, in the future we will send it as arguments, or use cache
         self.flow.encoder.static_chunk_size = 2 * self.flow.input_frame_rate
         self.flow.decoder.estimator.static_chunk_size = 2 * self.flow.input_frame_rate * self.flow.token_mel_ratio
@@ -305,6 +305,7 @@ class CosyVoice2Model(CosyVoiceModel):
                                          prompt_feat_len=torch.tensor([prompt_feat.shape[1]], dtype=torch.int32).to(self.device),
                                          embedding=embedding.to(self.device),
                                          finalize=finalize)   # flow matching解码采样
+        # 因为每次flow.inference解码都是基于所有预测的speech tokens，流式时就基于token_offset来获取当前新预测出来的mel谱图；此处的token_mel_ratio--2是设置的token和mel谱图的映射比例，即一个speech token对应2个mel谱图特征
         tts_mel = tts_mel[:, :, token_offset * self.flow.token_mel_ratio:]
         # append hift cache
         if self.hift_cache_dict[uuid] is not None:
@@ -341,25 +342,26 @@ class CosyVoice2Model(CosyVoiceModel):
             self.tts_speech_token_dict[this_uuid], self.llm_end_dict[this_uuid] = [], False
             self.hift_cache_dict[this_uuid] = None
         p = threading.Thread(target=self.llm_job, args=(text, prompt_text, llm_prompt_speech_token, llm_embedding, this_uuid))
-        p.start()
+        p.start()  # 启动LLM推理线程，在子线程中预测speech tokens，llm.inference是一个生成器，会陆续将预测的speech tokens id序列添加到self.tts_speech_token_dict[this_uuid]中
         if stream is True:
             token_offset = 0
             while True:
                 time.sleep(0.1)
-                if len(self.tts_speech_token_dict[this_uuid]) - token_offset >= self.token_hop_len + self.flow.pre_lookahead_len:
+                if len(self.tts_speech_token_dict[this_uuid]) - token_offset >= self.token_hop_len + self.flow.pre_lookahead_len:  # 新预测的speech tokens数量大于设置值后开始解码；token_hop_len为50，pre_lookahead_len为3，共53
+                    # 此处与CosyVoiceModel中不同，每次解码的基本上累计预测出的所有speech tokens，数量一次是53，103，153，203，...递增 ；如果单次预测增加的tokens不是恰好50，会通过[:token_offset + self.token_hop_len + self.flow.pre_lookahead_len]直接截断
                     this_tts_speech_token = torch.tensor(self.tts_speech_token_dict[this_uuid][:token_offset + self.token_hop_len + self.flow.pre_lookahead_len]).unsqueeze(dim=0)
                     this_tts_speech = self.token2wav(token=this_tts_speech_token,
                                                      prompt_token=flow_prompt_speech_token,
                                                      prompt_feat=prompt_speech_feat,
                                                      embedding=flow_embedding,
                                                      uuid=this_uuid,
-                                                     token_offset=token_offset,
+                                                     token_offset=token_offset,  # 因为上述提到每次解码基本都是累计预测出的所有speech tokens，token_offset表示当前解码的真实起始位置用于获取新预测出来的mel图谱
                                                      finalize=False)
-                    token_offset += self.token_hop_len
+                    token_offset += self.token_hop_len  # 更新token_offset
                     yield {'tts_speech': this_tts_speech.cpu()}
                 if self.llm_end_dict[this_uuid] is True and len(self.tts_speech_token_dict[this_uuid]) - token_offset < self.token_hop_len + self.flow.pre_lookahead_len:
                     break
-            p.join()
+            p.join()  # 等待LLM推理线程完成
             # deal with remain tokens, make sure inference remain token len equals token_hop_len when cache_speech is not None
             this_tts_speech_token = torch.tensor(self.tts_speech_token_dict[this_uuid]).unsqueeze(dim=0)
             this_tts_speech = self.token2wav(token=this_tts_speech_token,
