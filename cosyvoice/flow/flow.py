@@ -218,9 +218,9 @@ class CausalMaskedDiffWithXvec(torch.nn.Module):
         token = self.input_embedding(torch.clamp(token, min=0)) * mask  # [1, 55, 512]
 
         # text encode
-        h, h_lengths = self.encoder(token, token_len)  # 如[1, 110, 512]；对speech tokens进行编码
+        h, h_lengths = self.encoder(token, token_len)  # 如[1, 110, 512]；对speech tokens进行编码，中间长度维度会翻倍，因为此处encodr是UpsamplerConformerEncoder
         if finalize is False:  # finalize用于表示流式推理时的最后一次解码，非最后一次时finalize都为False，会截取pre_lookahead_len个tokens对应的向量场
-            h = h[:, :-self.pre_lookahead_len * self.token_mel_ratio]
+            h = h[:, :-self.pre_lookahead_len * self.token_mel_ratio]  # pre_lookahead_len为3，token_mel_ratio为2，故最后6个token对应的向量特征被丢弃
         mel_len1, mel_len2 = prompt_feat.shape[1], h.shape[1] - prompt_feat.shape[1]
         h = self.encoder_proj(h)  # 如[1, 110, 80]
 

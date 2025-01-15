@@ -102,10 +102,10 @@ class ConditionalCFM(BASECFM):
             # Classifier-Free Guidance inference introduced in VoiceBox
             x_in[:] = x  # 将x复制到x_in中，会将x重复两次
             mask_in[:] = mask  # 将mask复制到mask_in中，会将mask重复两次
-            mu_in[0] = mu  # 将mu复制到mu_in中
+            mu_in[0] = mu  # 将mu赋值给mu_in[0]，mu_in[1]为0，对应于无条件预测
             t_in[:] = t.unsqueeze(0)  # 将t复制到t_in中，会将t重复两次
-            spks_in[0] = spks  # 将spks复制到spks_in中
-            cond_in[0] = cond  # 将cond复制到cond_in中
+            spks_in[0] = spks  # 将spks赋值给spks_in[0]，spks_in[1]为0，对应于无条件预测
+            cond_in[0] = cond  # 将cond赋值给cond_in[0]，cond_in[1]为0，对应于无条件预测
             dphi_dt = self.forward_estimator(
                 x_in, mask_in,
                 mu_in, t_in,

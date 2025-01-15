@@ -250,7 +250,7 @@ class ConditionalDecoder(nn.Module):
             x = resnet(x, mask_down, t)  # 如[2, 256, 110]
             x = rearrange(x, "b c t -> b t c").contiguous()  # 如[2, 110, 256]
             # attn_mask = torch.matmul(mask_down.transpose(1, 2).contiguous(), mask_down)
-            attn_mask = add_optional_chunk_mask(x, mask_down.bool(), False, False, 0, self.static_chunk_size, -1)  # 如[2, 110, 110]
+            attn_mask = add_optional_chunk_mask(x, mask_down.bool(), False, False, 0, self.static_chunk_size, -1)  # 如[2, 110, 110]；此处的static_chunk_size在类中没有定义，而是在CosyVoice2Model初始化中赋值，为100
             attn_mask = mask_to_bias(attn_mask == 1, x.dtype)  # 如[2, 110, 110]
             for transformer_block in transformer_blocks:
                 x = transformer_block(

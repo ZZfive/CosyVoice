@@ -199,7 +199,7 @@ def add_optional_chunk_mask(xs: torch.Tensor,
     # Whether to use chunk mask or not
     if use_dynamic_chunk:
         max_len = xs.size(1)
-        if decoding_chunk_size < 0:  # 如果解码分块大小小于0，则使用整个序列作为分块
+        if decoding_chunk_size < 0:  # 如果解码分块大小小于0，则使用整个序列作为分块，等价于论文中Non-Causal Mask
             chunk_size = max_len
             num_left_chunks = -1
         elif decoding_chunk_size > 0:  # 如果解码分块大小大于0，则使用固定大小的分块
@@ -224,15 +224,15 @@ def add_optional_chunk_mask(xs: torch.Tensor,
                                             xs.device)  # (L, L)
         chunk_masks = chunk_masks.unsqueeze(0)  # (1, L, L)
         chunk_masks = masks & chunk_masks  # (B, L, L)
-    elif static_chunk_size > 0:  # 静态分块
+    elif static_chunk_size > 0:  # 静态分块，类似论文中的Chunk-2M Mask
         num_left_chunks = num_decoding_left_chunks
         chunk_masks = subsequent_chunk_mask(xs.size(1), static_chunk_size,
                                             num_left_chunks,
                                             xs.device)  # (L, L)
         chunk_masks = chunk_masks.unsqueeze(0)  # (1, L, L)
-        chunk_masks = masks & chunk_masks  # (B, L, L)
+        chunk_masks = masks & chunk_masks  # (B, L, L)，两个mask按位相与
     else:  # 不使用分块掩码
-        chunk_masks = masks
+        chunk_masks = masks  # 等价于论文中的Non-Causal Mask
     return chunk_masks
 
 
