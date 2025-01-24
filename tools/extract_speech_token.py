@@ -24,7 +24,7 @@ import whisper
 
 
 def single_job(utt):
-    audio, sample_rate = torchaudio.load(utt2wav[utt])  # 加载音频
+    audio, sample_rate = torchaudio.load(utt2wav[utt], backend='soundfile')
     if sample_rate != 16000:
         audio = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)(audio)  # 重采样到16k
     if audio.shape[1] / 16000 > 30:
